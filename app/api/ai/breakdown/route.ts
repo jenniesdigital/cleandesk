@@ -5,10 +5,20 @@ const apiKey = process.env.GEMINI_API_KEY;
 
 export async function POST(request: Request) {
   try {
-    const { taskTitle, roles } = await request.json();
+    const { taskTitle, taskNotes, roles } = await request.json();
 
     if (!taskTitle) {
       return NextResponse.json({ error: "Task title is required" }, { status: 400 });
+    }
+
+    const combinedContext = `${taskTitle}\n\n${taskNotes || ""}`.trim();
+    const wordCount = combinedContext.split(/\s+/).length;
+
+    if (wordCount < 8) {
+      return NextResponse.json({
+        error: "thin_context",
+        message: "Add more detail in the title or notes for a better AI breakdown."
+      });
     }
 
     const roleContext = roles?.length
@@ -23,7 +33,7 @@ export async function POST(request: Request) {
     }
 
     const systemInstruction = `
-You are CleanDesk's intelligent productivity assistant. Your job is to take a large, complex task and break it down into 5 to 6 granular, highly actionable subtasks.${roleContext}
+You are CleanDesk's intelligent productivity assistant. Your job is to take a task and its notes, then break it down into 5 to 6 granular, highly actionable subtasks. Use the notes for context and detail.${roleContext}
 
 Return a strict JSON object with this exact structure:
 {
@@ -46,7 +56,7 @@ Return ONLY the JSON. Do not write other text or wrap in markdown blocks.
     });
 
     const response = await model.generateContent({
-      contents: [{ role: "user", parts: [{ text: taskTitle }] }],
+      contents: [{ role: "user", parts: [{ text: `Task: ${taskTitle}\n\nNotes: ${taskNotes || "No notes provided."}` }] }],
       generationConfig: {
         responseMimeType: "application/json",
       },
@@ -55,7 +65,6 @@ Return ONLY the JSON. Do not write other text or wrap in markdown blocks.
     const responseText = response.response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
     
     if (!responseText) {
-      // Return a structured error response instead of throwing to avoid empty output
       return NextResponse.json({ error: "Empty response received from Gemini API" }, { status: 500 });
     }
     

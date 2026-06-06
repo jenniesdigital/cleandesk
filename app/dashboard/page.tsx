@@ -99,6 +99,7 @@ function DashboardContent() {
   const [breakingTaskId, setBreakingTaskId] = useState<string | null>(null);
   const [breakdownSuggestions, setBreakdownSuggestions] = useState<string[]>([]);
   const [isBreakingDown, setIsBreakingDown] = useState(false);
+  const [showThinContextHint, setShowThinContextHint] = useState(false);
 
   // Load initial data
   useEffect(() => {
@@ -231,6 +232,7 @@ function DashboardContent() {
     setActiveTaskId(taskId);
     setTaskEditTitle(t.title);
     setTaskEditNotes(t.notes || "");
+    setShowThinContextHint(false);
     setTaskEditDueDate(t.due_date || "");
     setTaskEditPriority(t.priority);
     setTaskEditProject(t.project_id || "");
@@ -240,6 +242,7 @@ function DashboardContent() {
   const closeTask = () => {
     setActiveTaskId(null);
     setBreakingTaskId(null);
+    setShowThinContextHint(false);
   };
 
   const saveTask = async () => {
@@ -462,26 +465,36 @@ function DashboardContent() {
   };
 
   // AI Task Breakdown API Call
-  const handleTaskBreakdown = async (taskId: string, title: string) => {
+  const handleTaskBreakdown = async (taskId: string) => {
     setBreakingTaskId(taskId);
     setIsBreakingDown(true);
     setBreakdownSuggestions([]);
+    setShowThinContextHint(false);
+
+    const words = (taskEditTitle + " " + taskEditNotes).trim().split(/\s+/).length;
+    if (words < 8) {
+      setBreakdownSuggestions([]);
+      setIsBreakingDown(false);
+      setBreakingTaskId(null);
+      setShowThinContextHint(true);
+      return;
+    }
 
     try {
       const response = await fetch("/api/ai/breakdown", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ taskTitle: title, roles: profile?.role }),
+        body: JSON.stringify({ taskTitle: taskEditTitle, taskNotes: taskEditNotes, roles: profile?.role }),
       });
 
+      const result = await response.json();
       if (response.ok) {
-        const result = await response.json();
         setBreakdownSuggestions(result.subtasks);
-      } else {
-        simulateLocalBreakdown(title);
+      } else if (result.error === "thin_context") {
+        setBreakdownSuggestions([]);
       }
     } catch {
-      simulateLocalBreakdown(title);
+      setBreakdownSuggestions([]);
     } finally {
       setIsBreakingDown(false);
     }
@@ -1608,7 +1621,7 @@ function DashboardContent() {
               <textarea
                 className="task-detail-notes"
                 value={taskEditNotes}
-                onChange={(e) => setTaskEditNotes(e.target.value)}
+                onChange={(e) => { setTaskEditNotes(e.target.value); if (showThinContextHint) setShowThinContextHint(false); }}
                 placeholder="Add notes, ideas, or context for this task..."
               />
             </div>
@@ -1619,13 +1632,21 @@ function DashboardContent() {
                 <button
                   className="btn btn-secondary"
                   style={{ fontSize: "0.85rem" }}
-                  onClick={() => handleTaskBreakdown(activeTaskId, taskEditTitle)}
+                  onClick={() => handleTaskBreakdown(activeTaskId)}
                   disabled={isBreakingDown}
                 >
                   <Sparkles size={14} /> Break down with AI
                 </button>
                 {isBreakingDown && <span className="typewriter-text" style={{ fontSize: "0.85rem" }}>Thinking of subtasks...</span>}
               </div>
+
+              {showThinContextHint && (
+                <div className="task-detail-breakdown" style={{ borderColor: "#eab308", background: "rgba(234, 179, 8, 0.08)" }}>
+                  <p style={{ fontSize: "0.85rem", color: "#eab308", margin: 0 }}>
+                    Add more detail in the title or notes for a better AI breakdown.
+                  </p>
+                </div>
+              )}
 
               {breakdownSuggestions.length > 0 && (
                 <div className="task-detail-breakdown">
