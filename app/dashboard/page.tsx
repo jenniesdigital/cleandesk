@@ -100,6 +100,7 @@ function DashboardContent() {
   const [breakdownSuggestions, setBreakdownSuggestions] = useState<string[]>([]);
   const [isBreakingDown, setIsBreakingDown] = useState(false);
   const [showThinContextHint, setShowThinContextHint] = useState(false);
+  const [breakdownError, setBreakdownError] = useState("");
 
   // Load initial data
   useEffect(() => {
@@ -233,6 +234,7 @@ function DashboardContent() {
     setTaskEditTitle(t.title);
     setTaskEditNotes(t.notes || "");
     setShowThinContextHint(false);
+    setBreakdownError("");
     setTaskEditDueDate(t.due_date || "");
     setTaskEditPriority(t.priority);
     setTaskEditProject(t.project_id || "");
@@ -470,6 +472,7 @@ function DashboardContent() {
     setIsBreakingDown(true);
     setBreakdownSuggestions([]);
     setShowThinContextHint(false);
+    setBreakdownError("");
 
     const words = (taskEditTitle + " " + taskEditNotes).trim().split(/\s+/).length;
     if (words < 8) {
@@ -481,20 +484,30 @@ function DashboardContent() {
     }
 
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
+
       const response = await fetch("/api/ai/breakdown", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ taskTitle: taskEditTitle, taskNotes: taskEditNotes, roles: profile?.role }),
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
 
       const result = await response.json();
       if (response.ok) {
         setBreakdownSuggestions(result.subtasks);
       } else if (result.error === "thin_context") {
-        setBreakdownSuggestions([]);
+        setShowThinContextHint(true);
+      } else {
+        setBreakdownError(result.error || "Could not break down this task.");
       }
-    } catch {
-      setBreakdownSuggestions([]);
+    } catch (err) {
+      const msg = err instanceof DOMException && err.name === "AbortError"
+        ? "Request timed out. Check your API configuration."
+        : "Could not reach the AI service.";
+      setBreakdownError(msg);
     } finally {
       setIsBreakingDown(false);
     }
@@ -1644,6 +1657,14 @@ function DashboardContent() {
                 <div className="task-detail-breakdown" style={{ borderColor: "#eab308", background: "rgba(234, 179, 8, 0.08)" }}>
                   <p style={{ fontSize: "0.85rem", color: "#eab308", margin: 0 }}>
                     Add more detail in the title or notes for a better AI breakdown.
+                  </p>
+                </div>
+              )}
+
+              {breakdownError && (
+                <div className="task-detail-breakdown" style={{ borderColor: "var(--color-error)", background: "var(--color-error-light, rgba(239, 68, 68, 0.08))" }}>
+                  <p style={{ fontSize: "0.85rem", color: "var(--color-error)", margin: 0 }}>
+                    {breakdownError}
                   </p>
                 </div>
               )}
