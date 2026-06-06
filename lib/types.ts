@@ -37,6 +37,7 @@ export interface Task {
   } | null;
   sort_order?: number;
   google_calendar_event_id?: string | null;
+  notes?: string;
   created_at: string;
 }
 

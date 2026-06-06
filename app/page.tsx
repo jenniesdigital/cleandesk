@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowRight, Check, Brain, Layers, Bell, Calendar, Sparkles, BarChart3, Quote, Globe, MessageSquare } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { BinderLogo } from "@/lib/logo";
+import { SignInButton } from "@/components/sign-in-button";
 import "./landing.css";
 
 const features = [
@@ -13,7 +14,7 @@ const features = [
   {
     icon: Layers,
     title: "Projects that hold everything together",
-    desc: "Group tasks and notes under projects. Keep your law assignment, content calendar, and portfolio in separate spaces without switching tabs.",
+    desc: "Group tasks and notes under projects. Keep work, personal, and creative spaces separate without switching tabs.",
   },
   {
     icon: Bell,
@@ -62,15 +63,13 @@ const testimonials = [
   {
     quote: "Tried Notion, Todoist, and 7 other tools. This is the first one that didn't make me feel guilty about my backlog.",
     author: "Alex Turner",
-    role: "Law Student",
+    role: "Freelance Writer",
   },
 ];
 
 export default async function Home() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
-
-  const authUrl = `https://qaqtlidswgxqxlrvmnqn.supabase.co/auth/v1/authorize?provider=google&redirect_to=${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/auth/callback`;
 
   return (
     <div className="landing-container">
@@ -88,9 +87,9 @@ export default async function Home() {
               Dashboard
             </Link>
           ) : (
-            <Link href={authUrl} className="btn btn-primary btn-sm">
+            <SignInButton size="btn-sm">
               Get started
-            </Link>
+            </SignInButton>
           )}
         </nav>
       </header>
@@ -115,9 +114,9 @@ export default async function Home() {
               </Link>
             ) : (
               <>
-                <Link href={authUrl} className="btn btn-primary btn-lg">
+                <SignInButton size="btn-lg">
                   Try CleanDesk free <ArrowRight size={16} />
-                </Link>
+                </SignInButton>
                 <a href="#how-it-works" className="btn btn-secondary btn-lg">
                   See how it works
                 </a>
@@ -286,7 +285,7 @@ export default async function Home() {
           <div className="section-header">
             <span className="section-tag">Social proof</span>
             <h2 className="section-title">Loved by people who juggle too much</h2>
-            <p className="section-subtitle">From freelancers to law students — CleanDesk fits how you actually work.</p>
+            <p className="section-subtitle">From freelancers to startup founders — CleanDesk fits how you actually work.</p>
           </div>
           <div className="testimonial-grid">
             {testimonials.map((t, i) => (
@@ -317,9 +316,9 @@ export default async function Home() {
               Open CleanDesk <ArrowRight size={16} />
             </Link>
           ) : (
-            <Link href={authUrl} className="btn btn-primary btn-lg">
+            <SignInButton size="btn-lg">
               Start your free workspace <ArrowRight size={16} />
-            </Link>
+            </SignInButton>
           )}
         </div>
       </section>

@@ -37,10 +37,10 @@ function DashboardContent() {
   
   // App views: 'dashboard', 'projects', 'stats', 'settings'
   const [activeView, setActiveView] = useState<"dashboard" | "projects" | "stats" | "settings">("dashboard");
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">(getInitialTheme);
   const [currentUser, setCurrentUser] = useState<{ id: string; email?: string } | null>(null);
-  const [sidebarPinned, setSidebarPinned] = useState(false);
+  const [sidebarPinned, setSidebarPinned] = useState(true);
   
   // Data States
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -82,6 +82,18 @@ function DashboardContent() {
   // Drag & Drop State
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
   const [dragOverTaskId, setDragOverTaskId] = useState<string | null>(null);
+
+  // Stats period view
+  const [statsPeriod, setStatsPeriod] = useState<"daily" | "weekly" | "monthly">("weekly");
+
+  // Task detail view state
+  const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
+  const [taskEditTitle, setTaskEditTitle] = useState("");
+  const [taskEditNotes, setTaskEditNotes] = useState("");
+  const [taskEditDueDate, setTaskEditDueDate] = useState("");
+  const [taskEditPriority, setTaskEditPriority] = useState<"High" | "Medium" | "Low">("Medium");
+  const [taskEditProject, setTaskEditProject] = useState("");
+  const [taskEditStatus, setTaskEditStatus] = useState<"To Do" | "In Progress" | "Completed">("To Do");
 
   // AI Task Breakdown State
   const [breakingTaskId, setBreakingTaskId] = useState<string | null>(null);
@@ -179,8 +191,7 @@ function DashboardContent() {
   };
 
   // Add a task
-  const handleAddTask = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleAddTask = async () => {
     if (!newTaskTitle.trim()) return;
 
     const newTask = await createTask({
@@ -209,6 +220,39 @@ function DashboardContent() {
   const handleDeleteTask = async (id: string) => {
     await deleteTask(id);
     setTasks(prev => prev.filter(t => t.id !== id));
+  };
+
+  // Task detail view handlers
+  const activeTask = tasks.find(t => t.id === activeTaskId) || null;
+
+  const openTask = (taskId: string) => {
+    const t = tasks.find(t => t.id === taskId);
+    if (!t) return;
+    setActiveTaskId(taskId);
+    setTaskEditTitle(t.title);
+    setTaskEditNotes(t.notes || "");
+    setTaskEditDueDate(t.due_date || "");
+    setTaskEditPriority(t.priority);
+    setTaskEditProject(t.project_id || "");
+    setTaskEditStatus(t.status);
+  };
+
+  const closeTask = () => {
+    setActiveTaskId(null);
+    setBreakingTaskId(null);
+  };
+
+  const saveTask = async () => {
+    if (!activeTaskId) return;
+    const updated = await updateTask(activeTaskId, {
+      title: taskEditTitle,
+      notes: taskEditNotes,
+      due_date: taskEditDueDate || null,
+      priority: taskEditPriority,
+      project_id: taskEditProject || null,
+      status: taskEditStatus,
+    });
+    setTasks(prev => prev.map(t => t.id === activeTaskId ? updated : t));
   };
 
   // Drag & Drop handlers
@@ -311,7 +355,7 @@ function DashboardContent() {
       const response = await fetch("/api/ai/brain-dump", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: brainDumpText }),
+        body: JSON.stringify({ prompt: brainDumpText, roles: profile?.role }),
       });
 
       if (response.ok) {
@@ -337,14 +381,14 @@ function DashboardContent() {
     } = { projects: [], tasks: [] };
 
     // Identify project templates based on keywords
-    if (text.includes("law") || text.includes("assignment") || text.includes("exam")) {
-      suggestions.projects.push({ title: "Law School", description: "Studies and law exams" });
-    }
-    if (text.includes("post") || text.includes("linkedin") || text.includes("content")) {
+    if (text.includes("post") || text.includes("linkedin") || text.includes("content") || text.includes("blog")) {
       suggestions.projects.push({ title: "Content Strategy", description: "Articles and posts" });
     }
-    if (text.includes("portfolio") || text.includes("pmm") || text.includes("design") || text.includes("logo")) {
+    if (text.includes("portfolio") || text.includes("pmm") || text.includes("design") || text.includes("logo") || text.includes("brand")) {
       suggestions.projects.push({ title: "Portfolio Website", description: "Design work and cases" });
+    }
+    if (text.includes("launch") || text.includes("campaign") || text.includes("product") || text.includes("release")) {
+      suggestions.projects.push({ title: "Product Launch", description: "New product or feature release" });
     }
 
     // Split text by common separators
@@ -355,12 +399,12 @@ function DashboardContent() {
 
       // Classify to projects
       let projTitle = "General Desk";
-      if (cleaned.toLowerCase().match(/law|assignment|exam|study/)) {
-        projTitle = "Law School";
-      } else if (cleaned.toLowerCase().match(/post|linkedin|content|blog/)) {
+      if (cleaned.toLowerCase().match(/post|linkedin|content|blog/)) {
         projTitle = "Content Strategy";
-      } else if (cleaned.toLowerCase().match(/portfolio|pmm|design|logo/)) {
+      } else if (cleaned.toLowerCase().match(/portfolio|pmm|design|logo|brand/)) {
         projTitle = "Portfolio Website";
+      } else if (cleaned.toLowerCase().match(/launch|campaign|product|release/)) {
+        projTitle = "Product Launch";
       }
 
       // Add project automatically if not exist in suggestions
@@ -427,7 +471,7 @@ function DashboardContent() {
       const response = await fetch("/api/ai/breakdown", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ taskTitle: title }),
+        body: JSON.stringify({ taskTitle: title, roles: profile?.role }),
       });
 
       if (response.ok) {
@@ -453,12 +497,12 @@ function DashboardContent() {
         "Set up the landing page content",
         "Verify styling and preview site"
       ],
-      "finish law assignment": [
-        "Read references and study cases",
-        "Outline the assignment introduction",
-        "Draft the analysis and argument",
-        "Format footnotes and citations",
-        "Proofread final draft before submitting"
+      "plan product launch": [
+        "Define target audience and key messaging",
+        "Create launch timeline and milestones",
+        "Prepare marketing materials and assets",
+        "Coordinate with stakeholders and teams",
+        "Execute launch and monitor results"
       ]
     };
 
@@ -474,24 +518,10 @@ function DashboardContent() {
     setBreakdownSuggestions(result);
   };
 
-  const addBreakdownSubtasks = async (parentTaskId: string) => {
-    const parentTask = tasks.find(t => t.id === parentTaskId);
-    if (!parentTask) return;
-
-    for (const subTitle of breakdownSuggestions) {
-      const newTask = await createTask({
-        project_id: parentTask.project_id,
-        title: subTitle,
-        description: `Subtask of: ${parentTask.title}`,
-        due_date: parentTask.due_date,
-        due_time: parentTask.due_time,
-        priority: parentTask.priority,
-        status: "To Do",
-      });
-      setTasks(prev => [newTask, ...prev]);
-    }
-
-    setBreakingTaskId(null);
+  const addBreakdownToNotes = () => {
+    const formatted = breakdownSuggestions.map((s, i) => `${i + 1}. ${s}`).join("\n");
+    const header = `## AI Breakdown\n\n${formatted}\n\n---\n\n`;
+    setTaskEditNotes(prev => header + prev);
     setBreakdownSuggestions([]);
   };
 
@@ -536,7 +566,7 @@ function DashboardContent() {
                   <input 
                     type="text" 
                     className="form-input" 
-                    placeholder="Jennifer" 
+                    placeholder="Your name" 
                     value={onboardName}
                     onChange={(e) => setOnboardName(e.target.value)}
                   />
@@ -628,11 +658,7 @@ function DashboardContent() {
       )}
 
       {/* 2. SIDEBAR NAVIGATION */}
-      <aside 
-        className="sidebar"
-        onMouseEnter={() => { if (!sidebarPinned) setIsSidebarCollapsed(false); }}
-        onMouseLeave={() => { if (!sidebarPinned) setIsSidebarCollapsed(true); }}
-      >
+      <aside className="sidebar">
         <div>
           <div className="sidebar-logo">
             <BinderLogo size={34} />
@@ -706,7 +732,7 @@ function DashboardContent() {
               <p>
                 {activeProject 
                   ? activeProject.description || "Project Workspace"
-                  : `Welcome back, ${profile?.name || "Jennifer"}! Your desk is clear.`}
+                  : `Welcome back, ${profile?.name || "there"}! Your desk is clear.`}
               </p>
             </div>
           </div>
@@ -789,13 +815,14 @@ function DashboardContent() {
                   </div>
 
                   {/* Quick Task creation */}
-                  <form onSubmit={handleAddTask} className="quick-add-form">
+                  <div className="quick-add-form">
                     <input 
                       type="text" 
                       className="form-input" 
                       placeholder="Add a task to To Do..."
                       value={newTaskTitle}
                       onChange={(e) => setNewTaskTitle(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") handleAddTask(); }}
                     />
                     <select 
                       className="form-input"
@@ -808,10 +835,10 @@ function DashboardContent() {
                         <option key={p.id} value={p.id}>{p.title}</option>
                       ))}
                     </select>
-                    <button type="submit" className="btn btn-primary">
+                    <button className="btn btn-primary" onClick={handleAddTask}>
                       <Plus size={16} />
                     </button>
-                  </form>
+                  </div>
 
                   {/* Task list render */}
                   {filteredTasks.length === 0 ? (
@@ -863,7 +890,11 @@ function DashboardContent() {
                               {t.status === "Completed" && <Check size={12} />}
                             </button>
                             <div>
-                              <div className={`task-title-text ${t.status === "Completed" ? "completed" : ""}`}>
+                              <div
+                                className={`task-title-text ${t.status === "Completed" ? "completed" : ""}`}
+                                onClick={() => openTask(t.id)}
+                                style={{ cursor: "pointer" }}
+                              >
                                 {t.title}
                               </div>
                               {t.description && <div className="task-desc">{t.description}</div>}
@@ -888,10 +919,10 @@ function DashboardContent() {
                           <div className="task-actions">
                             {t.status !== "Completed" && (
                               <button 
-                                onClick={() => handleTaskBreakdown(t.id, t.title)}
+                                onClick={() => openTask(t.id)}
                                 className="btn btn-ghost" 
                                 style={{ padding: "0.25rem", color: "var(--brand-accent)" }}
-                                title="Break down with AI"
+                                title="Open task detail"
                               >
                                 <Sparkles size={14} />
                               </button>
@@ -909,41 +940,6 @@ function DashboardContent() {
                     </div>
                   )}
 
-                  {/* Active AI Task Breakdown Panel */}
-                  {breakingTaskId && (
-                    <div className="task-breakdown-sidebar">
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
-                        <h4 style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "var(--brand-accent)" }}>
-                          <Sparkles size={16} /> AI Subtask Breakdown
-                        </h4>
-                        <button className="btn btn-ghost" onClick={() => setBreakingTaskId(null)} style={{ padding: 0 }}>Close</button>
-                      </div>
-                      <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginBottom: "1rem" }}>
-                        Task: &apos;<strong>{tasks.find(t => t.id === breakingTaskId)?.title}</strong>&apos;
-                      </p>
-
-                      {isBreakingDown ? (
-                        <div className="typewriter-container" style={{ padding: "1rem" }}>
-                          <div className="typewriter-text">Thinking of subtasks...</div>
-                        </div>
-                      ) : (
-                        <div>
-                          <ul style={{ paddingLeft: "1.2rem", fontSize: "0.9rem", display: "flex", flexDirection: "column", gap: "0.35rem", marginBottom: "1.5rem" }}>
-                            {breakdownSuggestions.map((step, idx) => (
-                              <li key={idx} style={{ color: "var(--text-primary)" }}>{step}</li>
-                            ))}
-                          </ul>
-                          <button 
-                            className="btn btn-primary" 
-                            style={{ width: "100%", fontSize: "0.85rem" }}
-                            onClick={() => addBreakdownSubtasks(breakingTaskId)}
-                          >
-                            Add all steps as subtasks
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  )}
                 </div>
 
                 {/* Right panel: Brain Dump Widget */}
@@ -1033,7 +1029,7 @@ function DashboardContent() {
                     <input 
                       type="text" 
                       className="form-input" 
-                      placeholder="Project Title (e.g. Website Launch, Law Essay)"
+                      placeholder="Project Title (e.g. Website Launch, Marketing Campaign)"
                       value={newProjectTitle}
                       onChange={(e) => setNewProjectTitle(e.target.value)}
                     />
@@ -1227,58 +1223,172 @@ function DashboardContent() {
           {/* VIEW: STATISTICS */}
           {activeView === "stats" && (
             <div>
-              <div className="metrics-grid">
-                <div className="paper-card metric-card">
-                  <div className="metric-label">Completed Ratio</div>
-                  <div className="metric-value">{completionRate}%</div>
-                </div>
-                <div className="paper-card metric-card">
-                  <div className="metric-label">Active Workloads</div>
-                  <div className="metric-value">{activeTasksCount} Tasks</div>
-                </div>
-                <div className="paper-card metric-card">
-                  <div className="metric-label">Focus Areas</div>
-                  <div className="metric-value">{projects.length} Projects</div>
-                </div>
+              {/* Period tabs */}
+              <div className="tabs-header" style={{ marginBottom: "1.5rem" }}>
+                {(["daily", "weekly", "monthly"] as const).map(p => (
+                  <button
+                    key={p}
+                    className={`tab-btn ${statsPeriod === p ? "active" : ""}`}
+                    onClick={() => setStatsPeriod(p)}
+                  >
+                    {p.charAt(0).toUpperCase() + p.slice(1)}
+                  </button>
+                ))}
               </div>
 
-              <div className="stats-grid">
-                <div className="paper-card">
-                  <h3>Activity Breakdown</h3>
-                  <div style={{ marginTop: "1.5rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
-                    {projects.map(p => {
-                      const projTasks = tasks.filter(t => t.project_id === p.id);
-                      const done = projTasks.filter(t => t.status === "Completed").length;
-                      const total = projTasks.length;
-                      const rate = total > 0 ? Math.round((done / total) * 100) : 0;
-                      return (
-                        <div key={p.id}>
-                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", fontWeight: 600 }}>
-                            <span>{p.title}</span>
-                            <span>{done}/{total} Done ({rate}%)</span>
-                          </div>
-                          <div className="progress-bar-container">
-                            <div className="progress-bar-fill" style={{ width: `${rate}%` }}></div>
+              {(() => {
+                const now = new Date();
+                const todayStr = now.toISOString().split("T")[0];
+
+                // Period boundaries
+                const getStart = () => {
+                  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                  if (statsPeriod === "daily") return todayStr;
+                  if (statsPeriod === "weekly") {
+                    const day = d.getDay();
+                    d.setDate(d.getDate() - day + (day === 0 ? -6 : 1));
+                    return d.toISOString().split("T")[0];
+                  }
+                  return new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split("T")[0];
+                };
+
+                const getEnd = () => {
+                  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                  if (statsPeriod === "daily") return todayStr;
+                  if (statsPeriod === "weekly") {
+                    const day = d.getDay();
+                    d.setDate(d.getDate() - day + (day === 0 ? 0 : 7));
+                    return d.toISOString().split("T")[0];
+                  }
+                  return new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split("T")[0];
+                };
+
+                const periodStart = getStart();
+                const periodEnd = getEnd();
+
+                // Previous period boundaries
+                const getPrevStart = () => {
+                  const start = new Date(periodStart);
+                  if (statsPeriod === "daily") { start.setDate(start.getDate() - 1); }
+                  else if (statsPeriod === "weekly") { start.setDate(start.getDate() - 7); }
+                  else { start.setMonth(start.getMonth() - 1); }
+                  return start.toISOString().split("T")[0];
+                };
+
+                const getPrevEnd = () => {
+                  const d = new Date(periodStart);
+                  d.setDate(d.getDate() - 1);
+                  return d.toISOString().split("T")[0];
+                };
+
+                const prevStart = getPrevStart();
+
+                // Filter tasks by period
+                const periodTasks = tasks.filter(t => t.due_date && t.due_date >= periodStart && t.due_date <= periodEnd);
+                const prevTasks = tasks.filter(t => t.due_date && t.due_date >= prevStart && t.due_date < periodStart);
+
+                const periodDone = periodTasks.filter(t => t.status === "Completed").length;
+                const periodTotal = periodTasks.length;
+                const periodRate = periodTotal > 0 ? Math.round((periodDone / periodTotal) * 100) : 0;
+
+                const prevDone = prevTasks.filter(t => t.status === "Completed").length;
+                const prevTotal = prevTasks.length;
+                const prevRate = prevTotal > 0 ? Math.round((prevDone / prevTotal) * 100) : 0;
+
+                const periodLabels = {
+                  daily: "Today",
+                  weekly: "This Week",
+                  monthly: "This Month"
+                };
+
+                const prevLabels = {
+                  daily: "Yesterday",
+                  weekly: "Last Week",
+                  monthly: "Last Month"
+                };
+
+                const trend = periodRate > prevRate ? "up" : periodRate < prevRate ? "down" : "same";
+                const trendColor = trend === "up" ? "var(--color-success)" : trend === "down" ? "var(--color-error)" : "var(--text-muted)";
+                const trendIcon = trend === "up" ? "↑" : trend === "down" ? "↓" : "→";
+
+                return (
+                  <>
+                    <div className="metrics-grid">
+                      <div className="paper-card metric-card">
+                        <div className="metric-label">Completion Rate</div>
+                        <div className="metric-value">{periodRate}%</div>
+                        <div style={{ fontSize: "0.75rem", color: trendColor, marginTop: "0.25rem" }}>
+                          {trendIcon} {prevRate}% ({prevLabels[statsPeriod]})
+                        </div>
+                      </div>
+                      <div className="paper-card metric-card">
+                        <div className="metric-label">{periodLabels[statsPeriod]} Done</div>
+                        <div className="metric-value">{periodDone}/{periodTotal}</div>
+                        <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.25rem" }}>
+                          {prevDone} done {prevLabels[statsPeriod]}
+                        </div>
+                      </div>
+                      <div className="paper-card metric-card">
+                        <div className="metric-label">Active Workloads</div>
+                        <div className="metric-value">{activeTasksCount} Tasks</div>
+                      </div>
+                      <div className="paper-card metric-card">
+                        <div className="metric-label">Focus Areas</div>
+                        <div className="metric-value">{projects.length} Projects</div>
+                      </div>
+                    </div>
+
+                    <div className="stats-grid">
+                      <div className="paper-card">
+                        <h3>Activity Breakdown — {periodLabels[statsPeriod]}</h3>
+                        <div style={{ marginTop: "1.5rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
+                          {projects.filter(p => periodTasks.some(t => t.project_id === p.id)).length > 0 ? (
+                            projects.map(p => {
+                              const projTasks = periodTasks.filter(t => t.project_id === p.id);
+                              if (projTasks.length === 0) return null;
+                              const done = projTasks.filter(t => t.status === "Completed").length;
+                              const total = projTasks.length;
+                              const rate = total > 0 ? Math.round((done / total) * 100) : 0;
+                              return (
+                                <div key={p.id}>
+                                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", fontWeight: 600 }}>
+                                    <span>{p.title}</span>
+                                    <span>{done}/{total} Done ({rate}%)</span>
+                                  </div>
+                                  <div className="progress-bar-container">
+                                    <div className="progress-bar-fill" style={{ width: `${rate}%` }}></div>
+                                  </div>
+                                </div>
+                              );
+                            })
+                          ) : (
+                            <p style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>
+                              No tasks due {statsPeriod === "daily" ? "today" : `this ${statsPeriod.slice(0, -2)}`}.
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="paper-card">
+                        <h3>{periodLabels[statsPeriod]} Productivity Summary</h3>
+                        <p style={{ color: "var(--text-muted)", fontSize: "0.85rem", marginTop: "0.5rem" }}>
+                          {trend === "up"
+                            ? `Your completion rate is up ${periodRate - prevRate}% compared to ${prevLabels[statsPeriod]}. Keep it up!`
+                            : trend === "down"
+                              ? `Your completion rate dropped ${prevRate - periodRate}% from ${prevLabels[statsPeriod]}. Time to focus!`
+                              : `Same completion rate as ${prevLabels[statsPeriod]}. Consistency is key!`}
+                        </p>
+                        <div style={{ borderLeft: "3px solid var(--brand-accent)", paddingLeft: "1rem", marginTop: "1.5rem" }}>
+                          <div style={{ fontSize: "1.5rem", fontWeight: 700 }}>{periodDone} Tasks</div>
+                          <div style={{ fontSize: "0.85rem", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+                            COMPLETED {periodLabels[statsPeriod].toUpperCase()}
                           </div>
                         </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div className="paper-card">
-                  <h3>Weekly Productivity Summary</h3>
-                  <p style={{ color: "var(--text-muted)", fontSize: "0.85rem", marginTop: "0.5rem" }}>
-                    Your productivity score this week is higher than last week. Great execution!
-                  </p>
-                  <div style={{ borderLeft: "3px solid var(--brand-accent)", paddingLeft: "1rem", marginTop: "1.5rem" }}>
-                    <div style={{ fontSize: "1.5rem", fontWeight: 700 }}>+{completedTasks} Tasks</div>
-                    <div style={{ fontSize: "0.85rem", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
-                      COMPLETED THIS MONTH
+                      </div>
                     </div>
-                  </div>
-                </div>
-              </div>
+                  </>
+                );
+              })()}
             </div>
           )}
 
@@ -1424,6 +1534,132 @@ function DashboardContent() {
 
         </div>
       </main>
+
+      {/* TASK DETAIL OVERLAY */}
+      {activeTaskId && activeTask && (
+        <div className="task-detail-overlay" onClick={closeTask}>
+          <div className="task-detail-panel" onClick={(e) => e.stopPropagation()}>
+            
+            {/* Header */}
+            <div className="task-detail-header">
+              <input
+                type="text"
+                className="form-input task-detail-title-input"
+                value={taskEditTitle}
+                onChange={(e) => setTaskEditTitle(e.target.value)}
+                placeholder="Task title"
+              />
+              <button className="btn btn-ghost" onClick={closeTask} style={{ padding: "0.25rem", fontSize: "1.2rem", lineHeight: 1 }}>×</button>
+            </div>
+
+            {/* Meta row */}
+            <div className="task-detail-meta">
+              <div className="form-group" style={{ flex: 1 }}>
+                <label className="form-label">Project</label>
+                <select
+                  className="form-input"
+                  value={taskEditProject}
+                  onChange={(e) => setTaskEditProject(e.target.value)}
+                >
+                  <option value="">No Project</option>
+                  {projects.map(p => (
+                    <option key={p.id} value={p.id}>{p.title}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="form-group" style={{ flex: 1 }}>
+                <label className="form-label">Priority</label>
+                <select
+                  className="form-input"
+                  value={taskEditPriority}
+                  onChange={(e) => setTaskEditPriority(e.target.value as "High" | "Medium" | "Low")}
+                >
+                  <option value="Low">Low</option>
+                  <option value="Medium">Medium</option>
+                  <option value="High">High</option>
+                </select>
+              </div>
+              <div className="form-group" style={{ flex: 1 }}>
+                <label className="form-label">Due Date</label>
+                <input
+                  type="date"
+                  className="form-input"
+                  value={taskEditDueDate}
+                  onChange={(e) => setTaskEditDueDate(e.target.value)}
+                />
+              </div>
+              <div className="form-group" style={{ flex: 1 }}>
+                <label className="form-label">Status</label>
+                <select
+                  className="form-input"
+                  value={taskEditStatus}
+                  onChange={(e) => setTaskEditStatus(e.target.value as "To Do" | "In Progress" | "Completed")}
+                >
+                  <option value="To Do">To Do</option>
+                  <option value="In Progress">In Progress</option>
+                  <option value="Completed">Completed</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Notes */}
+            <div className="task-detail-section">
+              <label className="form-label">Notes</label>
+              <textarea
+                className="task-detail-notes"
+                value={taskEditNotes}
+                onChange={(e) => setTaskEditNotes(e.target.value)}
+                placeholder="Add notes, ideas, or context for this task..."
+              />
+            </div>
+
+            {/* AI Breakdown */}
+            <div className="task-detail-section">
+              <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.75rem" }}>
+                <button
+                  className="btn btn-secondary"
+                  style={{ fontSize: "0.85rem" }}
+                  onClick={() => handleTaskBreakdown(activeTaskId, taskEditTitle)}
+                  disabled={isBreakingDown}
+                >
+                  <Sparkles size={14} /> Break down with AI
+                </button>
+                {isBreakingDown && <span className="typewriter-text" style={{ fontSize: "0.85rem" }}>Thinking of subtasks...</span>}
+              </div>
+
+              {breakdownSuggestions.length > 0 && (
+                <div className="task-detail-breakdown">
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+                    <strong style={{ fontSize: "0.85rem", color: "var(--brand-accent)" }}>Suggested Subtasks</strong>
+                    <button
+                      className="btn btn-primary"
+                      style={{ fontSize: "0.8rem", padding: "0.3rem 0.75rem" }}
+                      onClick={addBreakdownToNotes}
+                    >
+                      Add to notes
+                    </button>
+                  </div>
+                  <ol style={{ paddingLeft: "1.2rem", fontSize: "0.9rem", display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+                    {breakdownSuggestions.map((step, idx) => (
+                      <li key={idx} style={{ color: "var(--text-primary)" }}>{step}</li>
+                    ))}
+                  </ol>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="task-detail-footer">
+              <button className="btn btn-secondary" onClick={closeTask}>Cancel</button>
+              <button className="btn btn-primary" onClick={async () => { await saveTask(); closeTask(); }}>
+                Save
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

@@ -5,11 +5,15 @@ const apiKey = process.env.GEMINI_API_KEY;
 
 export async function POST(request: Request) {
   try {
-    const { taskTitle } = await request.json();
+    const { taskTitle, roles } = await request.json();
 
     if (!taskTitle) {
       return NextResponse.json({ error: "Task title is required" }, { status: 400 });
     }
+
+    const roleContext = roles?.length
+      ? `\nThe user works as: ${roles.join(", ")}. Tailor the subtasks to their profession.`
+      : "";
 
     if (!apiKey) {
       return NextResponse.json(
@@ -19,20 +23,7 @@ export async function POST(request: Request) {
     }
 
     const systemInstruction = `
-You are CleanDesk's intelligent productivity assistant. Your job is to take a large, complex task and break it down into 5 to 6 granular, highly actionable subtasks.
-
-For example:
-Input: "Build Product Marketing Portfolio"
-Output JSON:
-{
-  "subtasks": [
-    "Define portfolio sections and layout",
-    "Create homepage header and intro copy",
-    "Write PMM case studies and results",
-    "Create portfolio visuals and screenshots",
-    "Deploy portfolio website to Vercel"
-  ]
-}
+You are CleanDesk's intelligent productivity assistant. Your job is to take a large, complex task and break it down into 5 to 6 granular, highly actionable subtasks.${roleContext}
 
 Return a strict JSON object with this exact structure:
 {

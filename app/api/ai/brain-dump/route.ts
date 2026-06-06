@@ -5,11 +5,15 @@ const apiKey = process.env.GEMINI_API_KEY;
 
 export async function POST(request: Request) {
   try {
-    const { prompt } = await request.json();
+    const { prompt, roles } = await request.json();
     
     if (!prompt) {
       return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
     }
+
+    const roleContext = roles?.length
+      ? `\nThe user works as: ${roles.join(", ")}. Tailor the suggested projects and tasks to their profession.`
+      : "";
 
     if (!apiKey) {
       return NextResponse.json(
@@ -19,7 +23,7 @@ export async function POST(request: Request) {
     }
 
     const systemInstruction = `
-You are CleanDesk's intelligent productivity assistant. Your job is to parse unstructured notes, brain dumps, or speech-to-text transcripts into a structured project and task layout.
+You are CleanDesk's intelligent productivity assistant. Your job is to parse unstructured notes, brain dumps, or speech-to-text transcripts into a structured project and task layout.${roleContext}
 
 Output a strict JSON object with this exact structure:
 {
@@ -32,7 +36,7 @@ Output a strict JSON object with this exact structure:
 }
 
 Guidelines:
-1. Identify high-level grouping containers and add them to the "projects" array. Keep projects lightweight (e.g. "Law School", "Client Website", "Content Strategy").
+1. Identify high-level grouping containers and add them to the "projects" array. Keep projects lightweight (e.g. "Product Launch", "Client Website", "Content Strategy").
 2. Extract specific, actionable tasks and link them to their corresponding project via "project_title". If a task doesn't belong to any project, use "General Desk".
 3. Evaluate the priority ("High", "Medium", "Low") based on urgency words in the input.
 4. Estimate due dates if mentioned (e.g., "by tomorrow", "Friday morning", "June 15"). If no date is mentioned, use today's date (${new Date().toISOString().split("T")[0]}).

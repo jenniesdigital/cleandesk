@@ -6,67 +6,10 @@ const LOCAL_USER_ID = "local-user";
 // Helper to check if client-side localStorage is available
 const isBrowser = typeof window !== "undefined";
 
-// Mock data generator for initial run
-const getInitialProjects = (): Project[] => [
-  {
-    id: "proj-1",
-    user_id: LOCAL_USER_ID,
-    title: "Portfolio Website",
-    description: "Build a sleek personal portfolio showcase",
-    is_archived: false,
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: "proj-2",
-    user_id: LOCAL_USER_ID,
-    title: "Law Assignment",
-    description: "Write paper on intellectual property in tech",
-    is_archived: false,
-    created_at: new Date().toISOString(),
-  }
-];
+// Empty initial state — users start with a clean desk
+const getInitialProjects = (): Project[] => [];
 
-const getInitialTasks = (): Task[] => [
-  {
-    id: "task-1",
-    user_id: LOCAL_USER_ID,
-    project_id: "proj-1",
-    title: "Draft case studies",
-    description: "Write up descriptions for the 3 main marketing projects.",
-    due_date: new Date().toISOString().split("T")[0],
-    due_time: "14:00",
-    priority: "High",
-    status: "In Progress",
-    sort_order: 0,
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: "task-2",
-    user_id: LOCAL_USER_ID,
-    project_id: "proj-2",
-    title: "Research tech law precedents",
-    description: "Look up recent judgments related to software copyrights.",
-    due_date: new Date().toISOString().split("T")[0],
-    due_time: "10:00",
-    priority: "Medium",
-    status: "To Do",
-    sort_order: 1,
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: "task-3",
-    user_id: LOCAL_USER_ID,
-    project_id: null,
-    title: "Weekly planning session",
-    description: "Clean up the desk and organize upcoming deadlines.",
-    due_date: new Date().toISOString().split("T")[0],
-    due_time: "09:00",
-    priority: "Low",
-    status: "Completed",
-    sort_order: 2,
-    created_at: new Date().toISOString(),
-  }
-];
+const getInitialTasks = (): Task[] => [];
 
 // LocalStorage helpers
 const getLocalData = <T>(key: string, defaultValue: T): T => {
@@ -139,18 +82,6 @@ export async function getProjects(): Promise<Project[]> {
 }
 
 export async function createProject(title: string, description?: string): Promise<Project> {
-  if (isSupabaseConfigured && supabase) {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      const { data, error } = await supabase
-        .from("projects")
-        .insert({ title, description, user_id: user.id })
-        .select()
-        .single();
-      if (!error) return data;
-    }
-  }
-
   const projects = await getProjects();
   const newProj: Project = {
     id: `proj-${Date.now()}`,
@@ -161,17 +92,21 @@ export async function createProject(title: string, description?: string): Promis
     created_at: new Date().toISOString(),
   };
   setLocalData("cleandesk_projects", [newProj, ...projects]);
+
+  supabaseSync(async (user) => {
+    await supabase!.from("projects").insert({ ...newProj, user_id: user.id });
+  });
+
   return newProj;
 }
 
 export async function deleteProject(id: string): Promise<void> {
-  if (isSupabaseConfigured && supabase) {
-    await supabase.from("projects").delete().eq("id", id);
-    return;
-  }
-
   const projects = await getProjects();
   setLocalData("cleandesk_projects", projects.filter(p => p.id !== id));
+
+  supabaseSync(async () => {
+    await supabase!.from("projects").delete().eq("id", id);
+  });
 }
 
 // Tasks APIs
@@ -184,23 +119,18 @@ export async function getTasks(): Promise<Task[]> {
     if (!error) return data || [];
   }
 
-  const local = getLocalData<Task[]>("cleandesk_tasks", getInitialTasks());
-  return local.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+  return getLocalData<Task[]>("cleandesk_tasks", getInitialTasks());
+}
+
+async function supabaseSync(
+  fn: (user: { id: string }) => void | Promise<void>
+): Promise<void> {
+  if (!isSupabaseConfigured || !supabase) return;
+  const { data: { user } } = await supabase.auth.getUser();
+  if (user) try { await fn(user); } catch {}
 }
 
 export async function createTask(task: Omit<Task, "id" | "user_id" | "created_at">): Promise<Task> {
-  if (isSupabaseConfigured && supabase) {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      const { data, error } = await supabase
-        .from("tasks")
-        .insert({ ...task, user_id: user.id })
-        .select()
-        .single();
-      if (!error) return data;
-    }
-  }
-
   const tasks = await getTasks();
   const maxOrder = tasks.reduce((max, t) => Math.max(max, t.sort_order ?? 0), -1);
   const newTask: Task = {
@@ -211,20 +141,15 @@ export async function createTask(task: Omit<Task, "id" | "user_id" | "created_at
     created_at: new Date().toISOString(),
   };
   setLocalData("cleandesk_tasks", [...tasks, newTask]);
+
+  supabaseSync(async (user) => {
+    await supabase!.from("tasks").insert({ ...newTask, user_id: user.id });
+  });
+
   return newTask;
 }
 
 export async function updateTask(id: string, updates: Partial<Task>): Promise<Task> {
-  if (isSupabaseConfigured && supabase) {
-    const { data, error } = await supabase
-      .from("tasks")
-      .update(updates)
-      .eq("id", id)
-      .select()
-      .single();
-    if (!error) return data;
-  }
-
   const tasks = await getTasks();
   let updatedTask: Task | null = null;
   const updatedTasks = tasks.map(t => {
@@ -235,30 +160,24 @@ export async function updateTask(id: string, updates: Partial<Task>): Promise<Ta
     return t;
   });
   setLocalData("cleandesk_tasks", updatedTasks);
+
+  supabaseSync(async (user) => {
+    await supabase!.from("tasks").update(updates).eq("id", id);
+  });
+
   return updatedTask || tasks.find(t => t.id === id)!;
 }
 
 export async function deleteTask(id: string): Promise<void> {
-  if (isSupabaseConfigured && supabase) {
-    await supabase.from("tasks").delete().eq("id", id);
-    return;
-  }
-
   const tasks = await getTasks();
   setLocalData("cleandesk_tasks", tasks.filter(t => t.id !== id));
+
+  supabaseSync(async () => {
+    await supabase!.from("tasks").delete().eq("id", id);
+  });
 }
 
 export async function reorderTasks(orderedIds: string[]): Promise<void> {
-  if (isSupabaseConfigured && supabase) {
-    for (let i = 0; i < orderedIds.length; i++) {
-      await supabase
-        .from("tasks")
-        .update({ sort_order: i })
-        .eq("id", orderedIds[i]);
-    }
-    return;
-  }
-
   const tasks = await getTasks();
   const updatedTasks = tasks.map(t => {
     const idx = orderedIds.indexOf(t.id);
@@ -268,6 +187,12 @@ export async function reorderTasks(orderedIds: string[]): Promise<void> {
     return t;
   });
   setLocalData("cleandesk_tasks", updatedTasks);
+
+  supabaseSync(async (user) => {
+    for (let i = 0; i < orderedIds.length; i++) {
+      await supabase!.from("tasks").update({ sort_order: i }).eq("id", orderedIds[i]);
+    }
+  });
 }
 
 // Notes APIs
@@ -286,24 +211,6 @@ export async function getNotes(projectId: string): Promise<Note[]> {
 }
 
 export async function saveNote(projectId: string, title: string, content: string, id?: string): Promise<Note> {
-  if (isSupabaseConfigured && supabase) {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      const payload = {
-        project_id: projectId,
-        title,
-        content,
-        user_id: user.id,
-        updated_at: new Date().toISOString(),
-      };
-      const query = id 
-        ? supabase.from("notes").update(payload).eq("id", id)
-        : supabase.from("notes").insert(payload);
-      const { data, error } = await query.select().single();
-      if (!error) return data;
-    }
-  }
-
   const allNotes = getLocalData<Note[]>("cleandesk_notes", []);
   let savedNote: Note;
 
@@ -330,6 +237,15 @@ export async function saveNote(projectId: string, title: string, content: string
     };
     setLocalData("cleandesk_notes", [savedNote, ...allNotes]);
   }
+
+  supabaseSync(async (user) => {
+    const payload = { ...savedNote, user_id: user.id };
+    if (id) {
+      await supabase!.from("notes").update(payload).eq("id", id);
+    } else {
+      await supabase!.from("notes").insert(payload);
+    }
+  });
 
   return savedNote;
 }

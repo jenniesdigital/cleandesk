@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { AuthHandler } from "@/components/auth-handler";
 
 export const metadata: Metadata = {
   title: "CleanDesk — Your Intelligent Workspace",
@@ -19,7 +20,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <AuthHandler />
+        {children}
+      </body>
     </html>
   );
 }
