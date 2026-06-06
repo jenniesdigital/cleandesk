@@ -37,6 +37,7 @@ const getInitialTasks = (): Task[] => [
     due_time: "14:00",
     priority: "High",
     status: "In Progress",
+    sort_order: 0,
     created_at: new Date().toISOString(),
   },
   {
@@ -49,6 +50,7 @@ const getInitialTasks = (): Task[] => [
     due_time: "10:00",
     priority: "Medium",
     status: "To Do",
+    sort_order: 1,
     created_at: new Date().toISOString(),
   },
   {
@@ -61,6 +63,7 @@ const getInitialTasks = (): Task[] => [
     due_time: "09:00",
     priority: "Low",
     status: "Completed",
+    sort_order: 2,
     created_at: new Date().toISOString(),
   }
 ];
@@ -177,11 +180,12 @@ export async function getTasks(): Promise<Task[]> {
     const { data, error } = await supabase
       .from("tasks")
       .select("*")
-      .order("created_at", { ascending: false });
+      .order("sort_order", { ascending: true });
     if (!error) return data || [];
   }
 
-  return getLocalData<Task[]>("cleandesk_tasks", getInitialTasks());
+  const local = getLocalData<Task[]>("cleandesk_tasks", getInitialTasks());
+  return local.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
 }
 
 export async function createTask(task: Omit<Task, "id" | "user_id" | "created_at">): Promise<Task> {
@@ -198,13 +202,15 @@ export async function createTask(task: Omit<Task, "id" | "user_id" | "created_at
   }
 
   const tasks = await getTasks();
+  const maxOrder = tasks.reduce((max, t) => Math.max(max, t.sort_order ?? 0), -1);
   const newTask: Task = {
     id: `task-${Date.now()}`,
     user_id: LOCAL_USER_ID,
     ...task,
+    sort_order: task.sort_order ?? maxOrder + 1,
     created_at: new Date().toISOString(),
   };
-  setLocalData("cleandesk_tasks", [newTask, ...tasks]);
+  setLocalData("cleandesk_tasks", [...tasks, newTask]);
   return newTask;
 }
 
@@ -240,6 +246,28 @@ export async function deleteTask(id: string): Promise<void> {
 
   const tasks = await getTasks();
   setLocalData("cleandesk_tasks", tasks.filter(t => t.id !== id));
+}
+
+export async function reorderTasks(orderedIds: string[]): Promise<void> {
+  if (isSupabaseConfigured && supabase) {
+    for (let i = 0; i < orderedIds.length; i++) {
+      await supabase
+        .from("tasks")
+        .update({ sort_order: i })
+        .eq("id", orderedIds[i]);
+    }
+    return;
+  }
+
+  const tasks = await getTasks();
+  const updatedTasks = tasks.map(t => {
+    const idx = orderedIds.indexOf(t.id);
+    if (idx !== -1) {
+      return { ...t, sort_order: idx };
+    }
+    return t;
+  });
+  setLocalData("cleandesk_tasks", updatedTasks);
 }
 
 // Notes APIs

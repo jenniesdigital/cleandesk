@@ -6,12 +6,13 @@ import {
   Inbox, Clock, Sparkles, Plus, 
   Trash2, Settings, LineChart, BookOpen, 
   ArrowRight, Check, FileText,
-  PanelLeftClose, PanelLeftOpen, Sun, Moon, LogOut
+  PanelLeftClose, PanelLeftOpen, Sun, Moon, LogOut,
+  GripVertical
 } from "lucide-react";
 import "../dashboard.css";
 import { 
   getProfile, saveProfile, getProjects, createProject, deleteProject,
-  getTasks, createTask, updateTask, deleteTask, getNotes, saveNote
+  getTasks, createTask, updateTask, deleteTask, reorderTasks, getNotes, saveNote
 } from "@/lib/data-store";
 import { Profile, Project, Task, Note } from "@/lib/types";
 import { BinderLogo } from "@/lib/logo";
@@ -77,6 +78,10 @@ function DashboardContent() {
     projects: { title: string; description: string }[];
     tasks: { title: string; project_title: string; priority: "High" | "Medium" | "Low"; due_date?: string }[];
   } | null>(null);
+
+  // Drag & Drop State
+  const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
+  const [dragOverTaskId, setDragOverTaskId] = useState<string | null>(null);
 
   // AI Task Breakdown State
   const [breakingTaskId, setBreakingTaskId] = useState<string | null>(null);
@@ -204,6 +209,48 @@ function DashboardContent() {
   const handleDeleteTask = async (id: string) => {
     await deleteTask(id);
     setTasks(prev => prev.filter(t => t.id !== id));
+  };
+
+  // Drag & Drop handlers
+  const handleDragStart = (taskId: string) => {
+    setDraggedTaskId(taskId);
+  };
+
+  const handleDragOver = (e: React.DragEvent, taskId: string) => {
+    e.preventDefault();
+    setDragOverTaskId(taskId);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedTaskId(null);
+    setDragOverTaskId(null);
+  };
+
+  const handleDrop = async (e: React.DragEvent, targetTaskId: string) => {
+    e.preventDefault();
+    if (!draggedTaskId || draggedTaskId === targetTaskId) {
+      handleDragEnd();
+      return;
+    }
+
+    const activeTasks = tasks.filter(t => t.status !== "Completed");
+    const draggedIdx = activeTasks.findIndex(t => t.id === draggedTaskId);
+    const targetIdx = activeTasks.findIndex(t => t.id === targetTaskId);
+    if (draggedIdx === -1 || targetIdx === -1) {
+      handleDragEnd();
+      return;
+    }
+
+    const [moved] = activeTasks.splice(draggedIdx, 1);
+    activeTasks.splice(targetIdx, 0, moved);
+
+    const completedTasksList = tasks.filter(t => t.status === "Completed");
+    const reorderedTasks = [...activeTasks, ...completedTasksList];
+    const newOrder = reorderedTasks.map((t, i) => ({ ...t, sort_order: i }));
+    setTasks(newOrder);
+
+    await reorderTasks(newOrder.map(t => t.id));
+    handleDragEnd();
   };
 
   // Create Project
@@ -768,15 +815,47 @@ function DashboardContent() {
 
                   {/* Task list render */}
                   {filteredTasks.length === 0 ? (
-                    <div style={{ textAlign: "center", padding: "4rem", color: "var(--text-muted)" }}>
-                      <Inbox size={48} style={{ margin: "0 auto 1rem auto", opacity: 0.3 }} />
-                      <p style={{ fontFamily: "var(--font-mono)", fontSize: "0.9rem" }}>Your desk is clear.</p>
+                    <div style={{ textAlign: "center", padding: "4rem 1rem", color: "var(--text-muted)" }}>
+                      {taskFilter === "today" && (
+                        <>
+                          <Inbox size={48} style={{ margin: "0 auto 1rem auto", opacity: 0.3 }} />
+                          <p style={{ fontFamily: "var(--font-mono)", fontSize: "0.9rem", marginBottom: "0.5rem" }}>Your desk is clear.</p>
+                          <p style={{ fontSize: "0.8rem" }}>Nothing due today. Try the brain dump to get ahead.</p>
+                        </>
+                      )}
+                      {taskFilter === "upcoming" && (
+                        <>
+                          <Sparkles size={48} style={{ margin: "0 auto 1rem auto", opacity: 0.3 }} />
+                          <p style={{ fontFamily: "var(--font-mono)", fontSize: "0.9rem", marginBottom: "0.5rem" }}>Nothing on the horizon.</p>
+                          <p style={{ fontSize: "0.8rem" }}>Future tasks will show up here once you add them.</p>
+                        </>
+                      )}
+                      {taskFilter === "completed" && (
+                        <>
+                          <Check size={48} style={{ margin: "0 auto 1rem auto", opacity: 0.3 }} />
+                          <p style={{ fontFamily: "var(--font-mono)", fontSize: "0.9rem", marginBottom: "0.5rem" }}>No tasks done yet.</p>
+                          <p style={{ fontSize: "0.8rem" }}>Complete a task to see it here.</p>
+                        </>
+                      )}
                     </div>
                   ) : (
                     <div>
                       {filteredTasks.map(t => (
-                        <div key={t.id} className="task-item">
+                        <div
+                          key={t.id}
+                          className={`task-item ${draggedTaskId === t.id ? "dragging" : ""} ${dragOverTaskId === t.id ? "drag-over" : ""}`}
+                          draggable={t.status !== "Completed"}
+                          onDragStart={() => handleDragStart(t.id)}
+                          onDragOver={(e) => handleDragOver(e, t.id)}
+                          onDrop={(e) => handleDrop(e, t.id)}
+                          onDragEnd={handleDragEnd}
+                        >
                           <div className="task-checkbox-container">
+                            {t.status !== "Completed" && (
+                              <div className="task-drag-handle">
+                                <GripVertical size={14} />
+                              </div>
+                            )}
                             <button 
                               className={`task-checkbox ${t.status === "Completed" ? "checked" : ""}`}
                               onClick={() => handleToggleTask(t.id, t.status)}

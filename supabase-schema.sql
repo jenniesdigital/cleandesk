@@ -55,6 +55,7 @@ create table public.tasks (
   due_time time without time zone,
   priority text check (priority in ('High', 'Medium', 'Low')) default 'Medium',
   status text check (status in ('To Do', 'In Progress', 'Completed')) default 'To Do',
+  sort_order integer default 0,
   recurring_rule jsonb, -- e.g. {"type": "weekly", "days": ["Monday"]}
   google_calendar_event_id text,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null

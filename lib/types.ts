@@ -35,6 +35,7 @@ export interface Task {
     type: "daily" | "weekly" | "monthly" | "none";
     days?: string[];
   } | null;
+  sort_order?: number;
   google_calendar_event_id?: string | null;
   created_at: string;
 }
