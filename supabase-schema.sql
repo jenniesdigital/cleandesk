@@ -113,3 +113,44 @@ alter table public.completions_log enable row level security;
 -- Policies for Completions Log
 create policy "Users can manage their own completions log" on public.completions_log
   for all using (auth.uid() = user_id);
+
+
+-- DELETE USER ACCOUNT FUNCTION
+create or replace function public.delete_user_account()
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  delete from public.completions_log where user_id = auth.uid();
+  delete from public.notes where user_id = auth.uid();
+  delete from public.tasks where user_id = auth.uid();
+  delete from public.projects where user_id = auth.uid();
+  delete from public.user_tokens where user_id = auth.uid();
+  delete from public.profiles where id = auth.uid();
+end;
+$$;
+
+
+-- 6. USER TOKENS TABLE (For Google OAuth tokens)
+create table public.user_tokens (
+  id uuid default gen_random_uuid() primary key,
+  user_id uuid references auth.users on delete cascade not null,
+  provider text not null check (provider in ('google')),
+  access_token text not null,
+  refresh_token text,
+  expires_at timestamp with time zone,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- Ensure one token set per provider per user
+create unique index idx_user_tokens_provider on public.user_tokens (user_id, provider);
+
+-- Enable RLS on User Tokens
+alter table public.user_tokens enable row level security;
+
+-- Policies for User Tokens
+create policy "Users can manage their own tokens" on public.user_tokens
+  for all using (auth.uid() = user_id);

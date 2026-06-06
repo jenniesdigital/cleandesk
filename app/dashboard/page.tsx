@@ -6,7 +6,7 @@ import {
   Inbox, Clock, Sparkles, Plus, 
   Trash2, Settings, LineChart, BookOpen, 
   ArrowRight, Check, FileText,
-  PanelLeftClose, PanelLeftOpen, Sun, Moon
+  PanelLeftClose, PanelLeftOpen, Sun, Moon, LogOut
 } from "lucide-react";
 import "../dashboard.css";
 import { 
@@ -14,6 +14,7 @@ import {
   getTasks, createTask, updateTask, deleteTask, getNotes, saveNote
 } from "@/lib/data-store";
 import { Profile, Project, Task, Note } from "@/lib/types";
+import { BinderLogo } from "@/lib/logo";
 
 export default function Dashboard() {
   return (
@@ -35,8 +36,10 @@ function DashboardContent() {
   
   // App views: 'dashboard', 'projects', 'stats', 'settings'
   const [activeView, setActiveView] = useState<"dashboard" | "projects" | "stats" | "settings">("dashboard");
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
   const [theme, setTheme] = useState<"light" | "dark">(getInitialTheme);
+  const [currentUser, setCurrentUser] = useState<{ id: string; email?: string } | null>(null);
+  const [sidebarPinned, setSidebarPinned] = useState(false);
   
   // Data States
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -99,6 +102,16 @@ function DashboardContent() {
       setTasks(t);
     }
     loadData();
+
+    const calendarStatus = searchParams.get("calendar");
+    if (calendarStatus === "connected") {
+      alert("Google Calendar connected successfully!");
+      setProfile(prev => prev ? { ...prev, calendar_allowed: true } : null);
+    } else if (calendarStatus === "denied") {
+      alert("Calendar connection was cancelled.");
+    } else if (calendarStatus === "error") {
+      alert("Failed to connect Calendar. Please try again.");
+    }
   }, [searchParams]);
 
   useEffect(() => {
@@ -568,13 +581,14 @@ function DashboardContent() {
       )}
 
       {/* 2. SIDEBAR NAVIGATION */}
-      <aside className="sidebar">
+      <aside 
+        className="sidebar"
+        onMouseEnter={() => { if (!sidebarPinned) setIsSidebarCollapsed(false); }}
+        onMouseLeave={() => { if (!sidebarPinned) setIsSidebarCollapsed(true); }}
+      >
         <div>
           <div className="sidebar-logo">
-            <div className="brand-mark">
-              <FileText size={19} />
-              <Sparkles size={10} className="brand-spark" />
-            </div>
+            <BinderLogo size={34} />
             <span className="brand-name">CleanDesk</span>
           </div>
           <nav className="sidebar-nav">
@@ -611,12 +625,12 @@ function DashboardContent() {
 
         {profile && (
           <div className="sidebar-profile">
-            <div style={{ backgroundColor: "var(--brand-accent-light)", color: "var(--brand-accent)", width: "36px", height: "36px", borderRadius: "50%", display: "flex", alignItems: "center", justifyItems: "center", justifyContent: "center", fontWeight: 700 }}>
+            <div className="sidebar-avatar">
               {profile.name.charAt(0).toUpperCase()}
             </div>
             <div className="sidebar-profile-text">
-              <div style={{ fontWeight: 600, fontSize: "0.85rem", lineHeight: 1.2 }}>{profile.name}</div>
-              <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>{profile.role[0]}</div>
+              <div className="sidebar-name">{profile.name}</div>
+              <div className="sidebar-role">{profile.role[0]}</div>
             </div>
           </div>
         )}
@@ -628,10 +642,13 @@ function DashboardContent() {
         <header className="dashboard-header">
           <div className="dashboard-title-group">
             <button
-              className="icon-btn"
-              onClick={() => setIsSidebarCollapsed(prev => !prev)}
-              aria-label={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-              title={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              className={`icon-btn ${sidebarPinned ? "active" : ""}`}
+              onClick={() => {
+                setSidebarPinned(prev => !prev);
+                setIsSidebarCollapsed(prev => !prev);
+              }}
+              aria-label={sidebarPinned ? "Unpin sidebar" : "Pin sidebar"}
+              title={sidebarPinned ? "Unpin sidebar (auto-hide)" : "Pin sidebar (always visible)"}
             >
               {isSidebarCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
             </button>
@@ -655,19 +672,9 @@ function DashboardContent() {
             >
               {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
             </button>
-            {activeView === "dashboard" && (
-              <button 
-                onClick={() => {
-                  setBrainDumpText("Finish PMM portfolio, schedule law assignment check-in, draft weekly client newsletter.");
-                  const element = document.getElementById("brain-dump-input");
-                  if (element) element.focus();
-                }}
-                className="btn btn-secondary"
-                style={{ fontSize: "0.85rem", color: "var(--brand-accent)" }}
-              >
-                <Sparkles size={14} /> Run Demo Dump
-              </button>
-            )}
+            <a href="/auth/signout" className="btn btn-secondary" style={{ fontSize: "0.85rem" }}>
+              <LogOut size={14} /> Sign out
+            </a>
           </div>
         </header>
 
@@ -1257,18 +1264,36 @@ function DashboardContent() {
                     </div>
                   </label>
 
-                  <label style={{ display: "flex", alignItems: "center", gap: "0.75rem", cursor: "pointer" }}>
-                    <input 
-                      type="checkbox"
-                      checked={profile.calendar_allowed}
-                      onChange={(e) => setProfile(prev => prev ? { ...prev, calendar_allowed: e.target.checked } : null)}
-                      style={{ width: "16px", height: "16px", accentColor: "var(--brand-accent)" }}
-                    />
-                    <div>
-                      <strong>Google Calendar Connection</strong>
-                      <div style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Push tasks to your calendar instantly.</div>
+                  <div style={{ borderTop: "1px solid var(--border-color)", paddingTop: "1rem", marginTop: "0.5rem" }}>
+                    <strong style={{ display: "block", marginBottom: "0.5rem" }}>Google Calendar Connection</strong>
+                    <div style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginBottom: "0.75rem" }}>
+                      Push tasks to your Google Calendar instantly when you create them.
                     </div>
-                  </label>
+                    <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                      <span className="badge badge-low" style={{ fontSize: "0.75rem" }}>
+                        {profile.calendar_allowed ? "Connected" : "Not connected"}
+                      </span>
+                      <button
+                        className="btn btn-secondary"
+                        style={{ fontSize: "0.8rem", padding: "0.3rem 0.75rem" }}
+                        onClick={async () => {
+                          const { supabase, isSupabaseConfigured } = await import("@/lib/supabase");
+                          if (!isSupabaseConfigured) {
+                            alert("Sign in with Google to connect Calendar. (Supabase Auth not configured)");
+                            return;
+                          }
+                          const { data: { user } } = await supabase!.auth.getUser();
+                          if (!user) {
+                            alert("Please sign in first to connect Google Calendar.");
+                            return;
+                          }
+                          window.location.href = `/api/auth/google?userId=${user.id}`;
+                        }}
+                      >
+                        {profile.calendar_allowed ? "Reconnect" : "Connect"}
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -1282,6 +1307,39 @@ function DashboardContent() {
               >
                 Save Settings
               </button>
+
+              <div style={{ borderTop: "1px solid var(--color-error-light)", paddingTop: "1.5rem", marginTop: "2rem" }}>
+                <h4 style={{ color: "var(--color-error)", marginBottom: "0.5rem" }}>Danger zone</h4>
+                <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginBottom: "1rem" }}>
+                  Permanently delete your account and all associated data. This cannot be undone.
+                </p>
+                <button
+                  className="btn"
+                  style={{ border: "1px solid var(--color-error)", color: "var(--color-error)", background: "none" }}
+                  onClick={async () => {
+                    if (!confirm("Are you sure you want to delete your account? All data will be permanently removed.")) return;
+                    if (!confirm("This cannot be undone. Continue?")) return;
+                    const { supabase, isSupabaseConfigured } = await import("@/lib/supabase");
+                    if (isSupabaseConfigured && supabase) {
+                      const { data: { user } } = await supabase.auth.getUser();
+                      if (user) {
+                        const { error } = await supabase.rpc("delete_user_account");
+                        if (error) {
+                          alert("Could not delete account. Please contact support.");
+                          return;
+                        }
+                        await supabase.auth.signOut();
+                        window.location.href = "/";
+                        return;
+                      }
+                    }
+                    localStorage.clear();
+                    window.location.href = "/";
+                  }}
+                >
+                  Delete account
+                </button>
+              </div>
             </div>
           )}
 

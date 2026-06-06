@@ -295,15 +295,43 @@ button, input, select, textarea {
   padding-top: 1.5rem;
 }
 
+.sidebar-avatar {
+  background-color: var(--brand-accent-light);
+  color: var(--brand-accent);
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.9rem;
+  flex-shrink: 0;
+}
+
+.sidebar-name {
+  font-weight: 600;
+  font-size: 0.85rem;
+  line-height: 1.2;
+}
+
+.sidebar-role {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
 .sidebar-collapsed .sidebar {
   width: 86px;
   padding-inline: 1rem;
+  overflow: hidden;
 }
 
 .sidebar-collapsed .brand-name,
 .sidebar-collapsed .sidebar-link span,
 .sidebar-collapsed .sidebar-profile-text {
-  display: none;
+  opacity: 0;
+  width: 0;
+  overflow: hidden;
 }
 
 .sidebar-collapsed .sidebar-logo,
@@ -363,6 +391,12 @@ button, input, select, textarea {
 .icon-btn:hover {
   color: var(--text-primary);
   border-color: var(--brand-accent);
+}
+
+.icon-btn.active {
+  border-color: var(--brand-accent);
+  color: var(--brand-accent);
+  background-color: var(--brand-accent-light);
 }
 
 .btn-primary {

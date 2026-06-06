@@ -1,128 +1,158 @@
 import Link from "next/link";
-import { Sparkles, ArrowRight, FileText, CheckSquare } from "lucide-react";
+import { ArrowRight, Check } from "lucide-react";
+import { createClient } from "@/lib/supabase/server";
+import { BinderLogo } from "@/lib/logo";
 import "./landing.css";
 
-export default function Home() {
+const features = [
+  {
+    title: "Dump your thoughts, we do the sorting",
+    desc: "Type whatever's on your mind — half-baked ideas, deadlines, random reminders. CleanDesk breaks it into projects and tasks automatically.",
+  },
+  {
+    title: "Projects that hold everything together",
+    desc: "Group tasks and notes under projects. Keep your law assignment, content calendar, and portfolio work in separate spaces without switching tabs.",
+  },
+  {
+    title: "Reminders that actually remind you",
+    desc: "Set it and forget it. Get an email a day before something's due, and another an hour before. No calendar-surfing required.",
+  },
+  {
+    title: "Google Calendar sync, if you want it",
+    desc: "Push tasks straight to your calendar as events. One less thing to copy-paste between apps.",
+  },
+];
+
+const steps = [
+  {
+    num: "01",
+    title: "Brain dump",
+    desc: "Write or paste whatever's in your head. A sentence, a paragraph, bullet points — it doesn't matter.",
+  },
+  {
+    num: "02",
+    title: "AI structures it",
+    desc: "We group your thoughts into projects and tasks with priorities and dates, using Gemini under the hood.",
+  },
+  {
+    num: "03",
+    title: "You execute",
+    desc: "Check things off, take notes inside projects, and let reminders handle the follow-up.",
+  },
+];
+
+export default async function Home() {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  const authUrl = `https://qaqtlidswgxqxlrvmnqn.supabase.co/auth/v1/authorize?provider=google&redirect_to=${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/auth/callback`;
+
   return (
     <div className="landing-container">
-      {/* Header */}
       <header className="landing-header">
         <div className="logo-container">
-          <div className="logo-mark">
-            <FileText size={19} />
-            <Sparkles size={10} className="brand-spark" />
-          </div>
-          <span>CleanDesk</span>
+          <BinderLogo size={34} />
+          <span className="logo-text">CleanDesk</span>
         </div>
-        <div>
-          <Link href="/dashboard" className="btn btn-secondary">
-            Go to Workspace
-          </Link>
-        </div>
+        <nav className="landing-nav">
+          <a href="#features">Features</a>
+          <a href="#how-it-works">How it works</a>
+          {user ? (
+            <Link href="/dashboard" className="btn btn-secondary btn-sm">
+              Dashboard
+            </Link>
+          ) : (
+            <Link href={authUrl} className="btn btn-primary btn-sm">
+              Get started
+            </Link>
+          )}
+        </nav>
       </header>
 
-      {/* Hero Section */}
-      <main className="landing-hero">
-        <div className="hero-badge">
-          <Sparkles size={14} />
-          <span>AI-Powered Personal Workspace</span>
-        </div>
-        
-        <h1 className="hero-title">
-          Turn mental clutter into <span>organized action</span>.
-        </h1>
-        
-        <p className="hero-subtitle">
-          CleanDesk is a calm, intelligent workspace for freelancers, creators, and multi-hyphenates. Dump your scattered thoughts and let AI structure your day.
-        </p>
-
-        <div className="hero-ctas">
-          <Link href="/dashboard?onboard=true" className="btn btn-primary btn-lg">
-            Get Started Free <ArrowRight size={16} />
-          </Link>
-          <Link href="#how-it-works" className="btn btn-secondary btn-lg">
-            See How it Works
-          </Link>
-        </div>
-
-        {/* Demo Paper Sheet Mockup */}
-        <div className="paper-card" style={{ maxWidth: "650px", width: "100%", textAlign: "left", margin: "0 auto" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid var(--border-color)", paddingBottom: "1rem", marginBottom: "1rem" }}>
-            <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.85rem", color: "var(--brand-accent)", fontWeight: 600 }}>
-              AI BRAIN DUMP ORGANIZER
-            </span>
-            <span style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>Try typing your day below</span>
+      <section className="hero">
+        <div className="hero-content">
+          <h1 className="hero-title">
+            A workspace that <span>clears your head</span> instead of adding to it.
+          </h1>
+          <p className="hero-subtitle">
+            Most productivity tools make you organise before you start. CleanDesk works the other way — dump whatever's on your mind and let AI sort the rest.
+          </p>
+          <div className="hero-actions">
+            {user ? (
+              <Link href="/dashboard" className="btn btn-primary btn-lg">
+                Go to dashboard <ArrowRight size={16} />
+              </Link>
+            ) : (
+              <>
+                <Link href={authUrl} className="btn btn-primary btn-lg">
+                  Try CleanDesk free <ArrowRight size={16} />
+                </Link>
+                <a href="#how-it-works" className="btn btn-secondary btn-lg">
+                  See how it works
+                </a>
+              </>
+            )}
           </div>
-          <div style={{ backgroundColor: "var(--bg-workspace)", padding: "1.25rem", borderRadius: "var(--radius-md)", fontStyle: "italic", color: "var(--text-muted)", marginBottom: "1.5rem", borderLeft: "3px solid var(--brand-accent)" }}>
-            &quot;Need to finish my PMM assignment, write two blog posts, prepare Friday client slides, and email Sarah.&quot;
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-              <span className="badge badge-high">Project</span>
-              <span style={{ fontWeight: 600, fontSize: "0.95rem" }}>PMM Assignment</span>
-            </div>
-            <div style={{ paddingLeft: "1.5rem", display: "flex", flexDirection: "column", gap: "0.5rem", borderLeft: "1px solid var(--border-color)" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.9rem" }}>
-                <CheckSquare size={14} style={{ color: "var(--text-muted)" }} />
-                <span>Finish assignment write-up</span>
+          <p className="hero-footnote">No credit card. No setup. Just a Google account.</p>
+        </div>
+      </section>
+
+      <section id="features" className="section features-section">
+        <div className="section-inner">
+          <h2 className="section-title">What it does</h2>
+          <p className="section-subtitle">Four things, done well.</p>
+          <div className="features-grid">
+            {features.map((f, i) => (
+              <div key={i} className="feature-card">
+                <div className="feature-num">{String(i + 1).padStart(2, "0")}</div>
+                <h3>{f.title}</h3>
+                <p>{f.desc}</p>
               </div>
-            </div>
-
-            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "0.5rem" }}>
-              <span className="badge badge-medium">Project</span>
-              <span style={{ fontWeight: 600, fontSize: "0.95rem" }}>Content Creation</span>
-            </div>
-            <div style={{ paddingLeft: "1.5rem", display: "flex", flexDirection: "column", gap: "0.5rem", borderLeft: "1px solid var(--border-color)" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.9rem" }}>
-                <CheckSquare size={14} style={{ color: "var(--text-muted)" }} />
-                <span>Draft blog post 1</span>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.9rem" }}>
-                <CheckSquare size={14} style={{ color: "var(--text-muted)" }} />
-                <span>Draft blog post 2</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </main>
-
-      {/* How it Works Section */}
-      <section id="how-it-works" className="workflow-section">
-        <div className="section-header">
-          <h2 className="section-title">The CleanDesk Workflow</h2>
-          <p className="section-subtitle">A simple cycle to keep your mental desk completely clear.</p>
-        </div>
-
-        <div className="workflow-grid">
-          <div className="paper-card workflow-card">
-            <div className="card-num">01</div>
-            <h3>Capture</h3>
-            <p>Type or speak everything currently on your mind without worrying about formatting or structure.</p>
-          </div>
-
-          <div className="paper-card workflow-card">
-            <div className="card-num">02</div>
-            <h3>Organize</h3>
-            <p>Our intelligent AI automatically breaks your thoughts down into neat projects and specific tasks.</p>
-          </div>
-
-          <div className="paper-card workflow-card">
-            <div className="card-num">03</div>
-            <h3>Plan</h3>
-            <p>Add dates, assign priorities, and sync tasks to your Google Calendar in a single click.</p>
-          </div>
-
-          <div className="paper-card workflow-card">
-            <div className="card-num">04</div>
-            <h3>Execute</h3>
-            <p>Log notes inside projects, track your daily targets, and check off completed items in a warm UI.</p>
+            ))}
           </div>
         </div>
       </section>
 
-      {/* Footer */}
+      <section id="how-it-works" className="section how-section">
+        <div className="section-inner">
+          <h2 className="section-title">How it works</h2>
+          <p className="section-subtitle">Three steps from scattered to sorted.</p>
+          <div className="steps-grid">
+            {steps.map((s, i) => (
+              <div key={i} className="step-card">
+                <div className="step-num">{s.num}</div>
+                <h3>{s.title}</h3>
+                <p>{s.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="section cta-section">
+        <div className="cta-card">
+          <h2>You bring the mental clutter. We bring the structure.</h2>
+          <p>No templates to set up. No folders to create. Just a clean space to dump your day.</p>
+          {user ? (
+            <Link href="/dashboard" className="btn btn-primary btn-lg">
+              Open CleanDesk <ArrowRight size={16} />
+            </Link>
+          ) : (
+            <Link href={authUrl} className="btn btn-primary btn-lg">
+              Start your free workspace <ArrowRight size={16} />
+            </Link>
+          )}
+        </div>
+      </section>
+
       <footer className="landing-footer">
-        <p>© {new Date().getFullYear()} CleanDesk. Designed for deep work and clear minds.</p>
+        <div className="footer-inner">
+          <div className="footer-brand">
+            <BinderLogo size={28} />
+            <span>CleanDesk</span>
+          </div>
+          <p className="footer-text">Built for people with too many tabs open.</p>
+        </div>
       </footer>
     </div>
   );
