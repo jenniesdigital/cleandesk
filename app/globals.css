@@ -1,0 +1,497 @@
+/* CleanDesk Design System - Custom Vanilla CSS */
+
+:root {
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+
+  /* Warm/Linen Color Palette */
+  --bg-workspace: hsl(36, 35%, 96%);      /* Warm linen/cream background */
+  --bg-card: hsl(0, 0%, 100%);            /* Off-white paper card */
+  --bg-input: hsl(36, 30%, 98%);          /* Slightly warmer input field */
+  --border-color: hsl(30, 15%, 88%);      /* Soft warm divider */
+  
+  --brand-accent: hsl(24, 85%, 50%);      /* Muted orange (Sticky note amber) */
+  --brand-accent-hover: hsl(24, 90%, 42%);
+  --brand-accent-light: hsl(28, 90%, 94%); /* Very soft amber background tint */
+  
+  --text-primary: hsl(210, 24%, 16%);     /* Warm charcoal slate */
+  --text-muted: hsl(30, 8%, 46%);         /* Warm medium gray */
+  --text-inverse: hsl(0, 0%, 100%);
+  
+  --color-success: hsl(142, 36%, 39%);    /* Sage/Forest green */
+  --color-success-light: hsl(142, 40%, 94%);
+  --color-error: hsl(5, 65%, 52%);        /* Muted Terracotta red */
+  --color-error-light: hsl(5, 70%, 95%);
+  --color-warning: hsl(40, 90%, 45%);     /* Soft amber/ochre */
+  --color-warning-light: hsl(40, 90%, 94%);
+
+  /* UI Tokens */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.03);
+  --shadow-md: 0 4px 12px -2px rgba(45, 35, 20, 0.05), 0 2px 6px -1px rgba(45, 35, 20, 0.03);
+  --shadow-lg: 0 10px 25px -5px rgba(45, 35, 20, 0.08), 0 8px 16px -6px rgba(45, 35, 20, 0.05);
+  
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-full: 9999px;
+  
+  --transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+html[data-theme="light"] {
+  --bg-workspace: hsl(36, 35%, 96%);
+  --bg-card: hsl(0, 0%, 100%);
+  --bg-input: hsl(36, 30%, 98%);
+  --border-color: hsl(30, 15%, 88%);
+  --text-primary: hsl(210, 24%, 16%);
+  --text-muted: hsl(30, 8%, 46%);
+  --brand-accent-light: hsl(28, 90%, 94%);
+}
+
+html[data-theme="dark"] {
+  --bg-workspace: hsl(210, 20%, 12%);
+  --bg-card: hsl(210, 18%, 15%);
+  --bg-input: hsl(210, 20%, 13%);
+  --border-color: hsl(210, 15%, 22%);
+  --brand-accent: hsl(24, 90%, 55%);
+  --brand-accent-hover: hsl(24, 95%, 62%);
+  --brand-accent-light: hsl(24, 40%, 18%);
+  --text-primary: hsl(40, 15%, 92%);
+  --text-muted: hsl(210, 10%, 70%);
+  --color-success: hsl(142, 45%, 45%);
+  --color-success-light: hsl(142, 30%, 18%);
+  --color-error: hsl(5, 75%, 60%);
+  --color-error-light: hsl(5, 40%, 18%);
+  --color-warning: hsl(40, 95%, 55%);
+  --color-warning-light: hsl(40, 40%, 18%);
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 4px 12px -2px rgba(0, 0, 0, 0.3), 0 2px 6px -1px rgba(0, 0, 0, 0.2);
+  --shadow-lg: 0 10px 25px -5px rgba(0, 0, 0, 0.4), 0 8px 16px -6px rgba(0, 0, 0, 0.3);
+}
+
+/* Dark Mode Overrides (Keeps the warm paper aesthetic but in slate/charcoal) */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg-workspace: hsl(210, 20%, 12%);
+    --bg-card: hsl(210, 18%, 15%);
+    --bg-input: hsl(210, 20%, 13%);
+    --border-color: hsl(210, 15%, 22%);
+    
+    --brand-accent: hsl(24, 90%, 55%);
+    --brand-accent-hover: hsl(24, 95%, 62%);
+    --brand-accent-light: hsl(24, 40%, 18%);
+    
+    --text-primary: hsl(40, 15%, 92%);
+    --text-muted: hsl(210, 10%, 70%);
+    
+    --color-success: hsl(142, 45%, 45%);
+    --color-success-light: hsl(142, 30%, 18%);
+    --color-error: hsl(5, 75%, 60%);
+    --color-error-light: hsl(5, 40%, 18%);
+    --color-warning: hsl(40, 95%, 55%);
+    --color-warning-light: hsl(40, 40%, 18%);
+    
+    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.2);
+    --shadow-md: 0 4px 12px -2px rgba(0, 0, 0, 0.3), 0 2px 6px -1px rgba(0, 0, 0, 0.2);
+    --shadow-lg: 0 10px 25px -5px rgba(0, 0, 0, 0.4), 0 8px 16px -6px rgba(0, 0, 0, 0.3);
+  }
+}
+
+html[data-theme="light"] {
+  --bg-workspace: hsl(36, 35%, 96%);
+  --bg-card: hsl(0, 0%, 100%);
+  --bg-input: hsl(36, 30%, 98%);
+  --border-color: hsl(30, 15%, 88%);
+  --brand-accent: hsl(24, 85%, 50%);
+  --brand-accent-hover: hsl(24, 90%, 42%);
+  --brand-accent-light: hsl(28, 90%, 94%);
+  --text-primary: hsl(210, 24%, 16%);
+  --text-muted: hsl(30, 8%, 46%);
+  --color-success: hsl(142, 36%, 39%);
+  --color-success-light: hsl(142, 40%, 94%);
+  --color-error: hsl(5, 65%, 52%);
+  --color-error-light: hsl(5, 70%, 95%);
+  --color-warning: hsl(40, 90%, 45%);
+  --color-warning-light: hsl(40, 90%, 94%);
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.03);
+  --shadow-md: 0 4px 12px -2px rgba(45, 35, 20, 0.05), 0 2px 6px -1px rgba(45, 35, 20, 0.03);
+  --shadow-lg: 0 10px 25px -5px rgba(45, 35, 20, 0.08), 0 8px 16px -6px rgba(45, 35, 20, 0.05);
+}
+
+html[data-theme="dark"] {
+  --bg-workspace: hsl(210, 20%, 12%);
+  --bg-card: hsl(210, 18%, 15%);
+  --bg-input: hsl(210, 20%, 13%);
+  --border-color: hsl(210, 15%, 22%);
+  --brand-accent: hsl(24, 90%, 55%);
+  --brand-accent-hover: hsl(24, 95%, 62%);
+  --brand-accent-light: hsl(24, 40%, 18%);
+  --text-primary: hsl(40, 15%, 92%);
+  --text-muted: hsl(210, 10%, 70%);
+  --color-success: hsl(142, 45%, 45%);
+  --color-success-light: hsl(142, 30%, 18%);
+  --color-error: hsl(5, 75%, 60%);
+  --color-error-light: hsl(5, 40%, 18%);
+  --color-warning: hsl(40, 95%, 55%);
+  --color-warning-light: hsl(40, 40%, 18%);
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 4px 12px -2px rgba(0, 0, 0, 0.3), 0 2px 6px -1px rgba(0, 0, 0, 0.2);
+  --shadow-lg: 0 10px 25px -5px rgba(0, 0, 0, 0.4), 0 8px 16px -6px rgba(0, 0, 0, 0.3);
+}
+
+/* Reset and Core Styling */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  height: 100%;
+  background-color: var(--bg-workspace);
+  color: var(--text-primary);
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: var(--font-sans), system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.6;
+  font-size: 15px;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--text-primary);
+  line-height: 1.25;
+}
+
+a {
+  color: var(--brand-accent);
+  text-decoration: none;
+  transition: color var(--transition-fast);
+}
+
+a:hover {
+  color: var(--brand-accent-hover);
+}
+
+button, input, select, textarea {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  outline: none;
+}
+
+/* Layout Utilities */
+.app-container {
+  display: flex;
+  min-height: 100vh;
+  background-color: var(--bg-workspace);
+}
+
+.main-content {
+  flex: 1;
+  padding: 2.5rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Sidebar Navigation (Notebook Tab look) */
+.sidebar {
+  width: 260px;
+  background-color: var(--bg-card);
+  border-right: 1px solid var(--border-color);
+  padding: 2rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  transition: width var(--transition-normal), padding var(--transition-normal);
+}
+
+.sidebar-logo {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 44px;
+  font-size: 1.05rem;
+  font-weight: 750;
+  color: var(--text-primary);
+  margin-bottom: 2.5rem;
+}
+
+.brand-mark,
+.logo-mark {
+  position: relative;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-inverse);
+  background: linear-gradient(145deg, var(--brand-accent), var(--brand-accent-hover));
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 10px;
+  box-shadow: 0 8px 20px -12px var(--brand-accent);
+}
+
+.brand-spark {
+  position: absolute;
+  right: 5px;
+  top: 5px;
+  color: hsl(40, 95%, 75%);
+}
+
+.brand-name {
+  white-space: nowrap;
+  font-weight: 760;
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  flex: 1;
+}
+
+.sidebar-link {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-md);
+  font-weight: 500;
+  color: var(--text-muted);
+  transition: all var(--transition-fast);
+  min-height: 44px;
+  width: 100%;
+  text-align: left;
+}
+
+.sidebar-link:hover, .sidebar-link.active {
+  color: var(--text-primary);
+  background-color: var(--bg-workspace);
+}
+
+.sidebar-link.active {
+  border-left: 3px solid var(--brand-accent);
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+.sidebar-profile {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  border-top: 1px solid var(--border-color);
+  padding-top: 1.5rem;
+}
+
+.sidebar-collapsed .sidebar {
+  width: 86px;
+  padding-inline: 1rem;
+}
+
+.sidebar-collapsed .brand-name,
+.sidebar-collapsed .sidebar-link span,
+.sidebar-collapsed .sidebar-profile-text {
+  display: none;
+}
+
+.sidebar-collapsed .sidebar-logo,
+.sidebar-collapsed .sidebar-link,
+.sidebar-collapsed .sidebar-profile {
+  justify-content: center;
+}
+
+.sidebar-collapsed .sidebar-link {
+  padding-inline: 0;
+}
+
+/* Card - Paper Style */
+.paper-card {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 1.25rem;
+  box-shadow: var(--shadow-md);
+  transition: transform var(--transition-normal), box-shadow var(--transition-normal);
+}
+
+.paper-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 40px;
+  padding: 0.55rem 1rem;
+  font-weight: 550;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  font-size: 0.9rem;
+}
+
+.icon-btn {
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background-color: var(--bg-card);
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.icon-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--brand-accent);
+}
+
+.btn-primary {
+  background-color: var(--brand-accent);
+  color: var(--text-inverse);
+  box-shadow: var(--shadow-sm);
+}
+
+.btn-primary:hover {
+  background-color: var(--brand-accent-hover);
+  transform: translateY(-1px);
+}
+
+.btn-secondary {
+  background-color: var(--bg-workspace);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+
+.btn-secondary:hover {
+  background-color: var(--border-color);
+}
+
+.btn-ghost {
+  color: var(--text-muted);
+}
+
+.btn-ghost:hover {
+  color: var(--text-primary);
+  background-color: var(--bg-workspace);
+}
+
+/* Forms & Inputs */
+.form-group {
+  margin-bottom: 1.25rem;
+}
+
+.form-label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 0.375rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.form-input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background-color: var(--bg-input);
+  color: var(--text-primary);
+  transition: all var(--transition-fast);
+}
+
+.form-input:focus {
+  border-color: var(--brand-accent);
+  background-color: var(--bg-card);
+  box-shadow: 0 0 0 3px var(--brand-accent-light);
+}
+
+/* Typewriter Loading Screen */
+.typewriter-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem;
+  text-align: center;
+}
+
+.typewriter-text {
+  font-family: var(--font-mono), monospace;
+  border-right: 2px solid var(--brand-accent);
+  white-space: nowrap;
+  animation: blink-caret 0.75s step-end infinite;
+  font-size: 1.125rem;
+  color: var(--brand-accent);
+}
+
+@keyframes blink-caret {
+  from, to { border-color: transparent }
+  50% { border-color: var(--brand-accent) }
+}
+
+/* Badges & Tags */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  font-family: var(--font-mono), monospace;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  text-transform: uppercase;
+}
+
+.badge-low {
+  background-color: var(--bg-workspace);
+  color: var(--text-muted);
+}
+
+.badge-medium {
+  background-color: var(--color-warning-light);
+  color: var(--color-warning);
+}
+
+.badge-high {
+  background-color: var(--color-error-light);
+  color: var(--color-error);
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
