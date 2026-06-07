@@ -284,7 +284,12 @@ export async function getNotes(projectId: string): Promise<Note[]> {
       .select("*")
       .eq("project_id", projectId)
       .order("updated_at", { ascending: false });
-    if (!error) return data || [];
+    if (!error && data && data.length > 0) {
+      const allNotes = getLocalData<Note[]>("cleandesk_notes", []);
+      const merged = [...data, ...allNotes.filter(n => n.project_id !== projectId)];
+      setLocalData("cleandesk_notes", merged);
+      return data;
+    }
   }
 
   const allNotes = getLocalData<Note[]>("cleandesk_notes", []);

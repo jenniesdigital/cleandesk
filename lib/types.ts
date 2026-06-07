@@ -31,6 +31,7 @@ export interface Task {
   due_date: string | null; // YYYY-MM-DD
   due_time: string | null; // HH:MM
   is_archived?: boolean;
+  completed_at?: string | null; // ISO timestamp when marked done
   priority: "High" | "Medium" | "Low";
   status: "To Do" | "In Progress" | "Completed";
   recurring_rule?: {

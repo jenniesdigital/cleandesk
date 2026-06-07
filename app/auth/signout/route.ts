@@ -4,5 +4,15 @@ import { createClient } from "@/lib/supabase/server";
 export async function GET() {
   const supabase = await createClient();
   await supabase.auth.signOut();
-  return NextResponse.redirect(new URL("/", process.env.NEXT_PUBLIC_APP_URL || "https://cleandeskai.vercel.app"));
+
+  return new NextResponse(
+    "<!DOCTYPE html><html><body><script>" +
+    "localStorage.removeItem('cleandesk_projects');" +
+    "localStorage.removeItem('cleandesk_tasks');" +
+    "localStorage.removeItem('cleandesk_notes');" +
+    "localStorage.removeItem('cleandesk_profile');" +
+    "window.location.href = '/';" +
+    "</script></body></html>",
+    { headers: { "Content-Type": "text/html" } }
+  );
 }

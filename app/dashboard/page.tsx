@@ -137,6 +137,11 @@ function DashboardContent() {
     } else if (calendarStatus === "error") {
       alert("Failed to connect Calendar. Please try again.");
     }
+
+    // Clean up query params after fresh sign-in
+    if (searchParams.get("fresh_signin") === "true") {
+      router.replace("/dashboard");
+    }
   }, [searchParams]);
 
   useEffect(() => {
@@ -263,7 +268,10 @@ function DashboardContent() {
   // Toggle task complete
   const handleToggleTask = async (id: string, currentStatus: string) => {
     const newStatus = currentStatus === "Completed" ? "To Do" : "Completed";
-    const updated = await updateTask(id, { status: newStatus });
+    const updated = await updateTask(id, { 
+      status: newStatus, 
+      completed_at: newStatus === "Completed" ? new Date().toISOString() : null 
+    });
     setTasks(prev => prev.map(t => t.id === id ? updated : t));
   };
 
@@ -622,7 +630,13 @@ function DashboardContent() {
     if (taskFilter === "upcoming") {
       return (t.due_date !== todayStr || !t.due_date) && t.status !== "Completed";
     }
-    return t.status === "Completed";
+    // "Completed" tab: only tasks done in the past 7 days
+    if (t.status === "Completed") {
+      if (!t.completed_at) return false;
+      const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+      return new Date(t.completed_at).getTime() > weekAgo;
+    }
+    return false;
   });
 
   return (
@@ -1795,6 +1809,34 @@ function DashboardContent() {
                     ))}
                   </div>
                 )}
+              </div>
+
+              <div className="paper-card" style={{ marginBottom: "1.5rem" }}>
+                <h4 style={{ marginBottom: "1rem" }}>Done Tasks ({tasks.filter(t => t.status === "Completed" && !t.is_archived && t.completed_at && new Date(t.completed_at).getTime() <= Date.now() - 7 * 24 * 60 * 60 * 1000).length})</h4>
+                {(() => {
+                  const oldDone = tasks.filter(t => t.status === "Completed" && !t.is_archived && t.completed_at && new Date(t.completed_at).getTime() <= Date.now() - 7 * 24 * 60 * 60 * 1000);
+                  return oldDone.length === 0 ? (
+                    <p style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>No completed tasks from over a week ago.</p>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                      {oldDone.map(t => (
+                        <div key={t.id} className="task-item">
+                          <div className="task-checkbox-container">
+                            <div>
+                              <div className="task-title-text" style={{ opacity: 0.7 }}>{t.title}</div>
+                              <div className="task-meta">
+                                <span className={`badge badge-${t.priority.toLowerCase()}`}>{t.priority}</span>
+                                <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                                  Done {new Date(t.completed_at!).toLocaleDateString()}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
               </div>
 
               <div className="paper-card">
