@@ -45,9 +45,9 @@ Guidelines:
 
     // Initialize Gemini API
     const genAI = new GoogleGenerativeAI(apiKey);
-    // Use gemini-2.0-flash and pass systemInstruction
-    const model = genAI.getGenerativeModel({ 
-      model: "gemini-2.0-flash",
+    // Use gemini-2.5-flash-lite (free tier, not deprecated)
+
+      model: "gemini-2.5-flash-lite",
       systemInstruction: systemInstruction
     });
 
@@ -68,7 +68,11 @@ Guidelines:
     const parsedData = JSON.parse(responseText.trim());
     return NextResponse.json(parsedData);
   } catch (error: unknown) {
-    console.error("AI Brain Dump Error:", error);
-    return NextResponse.json({ error: (error as Error).message || "Failed to parse text" }, { status: 500 });
+    const msg = (error as Error).message || "";
+    console.error("AI Brain Dump Error:", msg);
+    const friendly = msg.includes("429") || msg.includes("quota")
+      ? "AI is rate-limited. Try again in a minute."
+      : "Failed to parse your text.";
+    return NextResponse.json({ error: friendly }, { status: 500 });
   }
 }

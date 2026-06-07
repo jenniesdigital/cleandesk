@@ -51,7 +51,7 @@ Return ONLY the JSON. Do not write other text or wrap in markdown blocks.
 
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.0-flash",
+      model: "gemini-2.5-flash-lite",
       systemInstruction: systemInstruction,
     });
 
@@ -71,7 +71,11 @@ Return ONLY the JSON. Do not write other text or wrap in markdown blocks.
     const parsedData = JSON.parse(responseText.trim());
     return NextResponse.json(parsedData);
   } catch (error: unknown) {
-    console.error("AI Task Breakdown Error:", error);
-    return NextResponse.json({ error: (error as Error).message || "Failed to breakdown task" }, { status: 500 });
+    const msg = (error as Error).message || "";
+    console.error("AI Task Breakdown Error:", msg);
+    const friendly = msg.includes("429") || msg.includes("quota")
+      ? "AI is rate-limited. Try again in a minute."
+      : "Failed to break down this task.";
+    return NextResponse.json({ error: friendly }, { status: 500 });
   }
 }
