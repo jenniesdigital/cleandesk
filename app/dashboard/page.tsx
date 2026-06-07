@@ -7,12 +7,14 @@ import {
   Trash2, Settings, LineChart, BookOpen, 
   ArrowRight, Check, FileText,
   PanelLeftClose, PanelLeftOpen, Sun, Moon, LogOut,
-  GripVertical
+  GripVertical, Archive
 } from "lucide-react";
 import "../dashboard.css";
 import { 
   getProfile, saveProfile, getProjects, createProject, deleteProject,
-  getTasks, createTask, updateTask, deleteTask, reorderTasks, getNotes, saveNote
+  getTasks, createTask, updateTask, deleteTask, reorderTasks, reorderProjects,
+  archiveTask, unarchiveTask, archiveProject, unarchiveProject,
+  getNotes, saveNote
 } from "@/lib/data-store";
 import { Profile, Project, Task, Note } from "@/lib/types";
 import { BinderLogo } from "@/lib/logo";
@@ -82,6 +84,11 @@ function DashboardContent() {
   // Drag & Drop State
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
   const [dragOverTaskId, setDragOverTaskId] = useState<string | null>(null);
+  const [draggedProjectId, setDraggedProjectId] = useState<string | null>(null);
+  const [dragOverProjectId, setDragOverProjectId] = useState<string | null>(null);
+
+  // Archive view
+  const [showArchived, setShowArchived] = useState(false);
 
   // Stats period view
   const [statsPeriod, setStatsPeriod] = useState<"daily" | "weekly" | "monthly">("weekly");
@@ -181,6 +188,22 @@ function DashboardContent() {
     const saved = await saveProfile(defaultProfile);
     setProfile(saved);
     setShowOnboarding(false);
+    // Fire welcome email if we can get the user's email
+    (async () => {
+      try {
+        const { supabase, isSupabaseConfigured } = await import("@/lib/supabase");
+        if (isSupabaseConfigured && supabase) {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user?.email) {
+            fetch("/api/email/welcome", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ email: user.email, name: onboardName }),
+            }).catch(() => {});
+          }
+        }
+      } catch {}
+    })();
     // Clear url query params
     router.replace("/dashboard");
   };
@@ -209,6 +232,33 @@ function DashboardContent() {
     setTasks(prev => [newTask, ...prev]);
     setNewTaskTitle("");
     setNewTaskDueDate("");
+
+    // Push to Google Calendar if the user has calendar enabled
+    if (profile?.calendar_allowed) {
+      try {
+        const { supabase, isSupabaseConfigured } = await import("@/lib/supabase");
+        if (isSupabaseConfigured && supabase) {
+          const { data: tokenData } = await supabase!
+            .from("user_tokens")
+            .select("provider_token")
+            .eq("user_id", newTask.user_id)
+            .single();
+
+          if (tokenData?.provider_token) {
+            fetch("/api/calendar", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                title: newTask.title,
+                date: newTask.due_date,
+                description: newTask.description,
+                providerToken: tokenData.provider_token,
+              }),
+            }).catch(() => {});
+          }
+        }
+      } catch {}
+    }
   };
 
   // Toggle task complete
@@ -564,6 +614,8 @@ function DashboardContent() {
 
   // Filter tasks list based on active filter tabs
   const filteredTasks = tasks.filter(t => {
+    if (showArchived) return t.is_archived;
+    if (t.is_archived) return false;
     const todayStr = new Date().toISOString().split("T")[0];
     if (taskFilter === "today") {
       return t.due_date === todayStr && t.status !== "Completed";
@@ -764,6 +816,15 @@ function DashboardContent() {
           </div>
           <div className="dashboard-header-actions">
             <button
+              className={`icon-btn ${showArchived ? "active" : ""}`}
+              onClick={() => setShowArchived(prev => !prev)}
+              aria-label="Archived items"
+              title={showArchived ? "Hide archived" : "Show archived"}
+              style={{ color: showArchived ? "var(--brand-accent)" : undefined }}
+            >
+              <Archive size={18} />
+            </button>
+            <button
               className="icon-btn"
               onClick={toggleTheme}
               aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
@@ -943,23 +1004,42 @@ function DashboardContent() {
                           </div>
                           
                           <div className="task-actions">
-                            {t.status !== "Completed" && (
-                              <button 
-                                onClick={() => openTask(t.id)}
-                                className="btn btn-ghost" 
-                                style={{ padding: "0.25rem", color: "var(--brand-accent)" }}
-                                title="Open task detail"
+                            {t.is_archived ? (
+                              <button
+                                onClick={async () => { const ut = await unarchiveTask(t.id); setTasks(prev => prev.map(t2 => t2.id === t.id ? ut : t2)); }}
+                                className="btn btn-ghost"
+                                style={{ padding: "0.25rem", color: "var(--color-success)" }}
+                                title="Restore task"
                               >
-                                <Sparkles size={14} />
+                                <Archive size={14} />
                               </button>
+                            ) : (
+                              <>
+                                <button 
+                                  onClick={() => openTask(t.id)}
+                                  className="btn btn-ghost" 
+                                  style={{ padding: "0.25rem", color: "var(--brand-accent)" }}
+                                  title="Open task detail"
+                                >
+                                  <Sparkles size={14} />
+                                </button>
+                                <button
+                                  onClick={async () => { const at = await archiveTask(t.id); setTasks(prev => prev.map(t2 => t2.id === t.id ? at : t2)); }}
+                                  className="btn btn-ghost"
+                                  style={{ padding: "0.25rem", color: "var(--text-muted)" }}
+                                  title="Archive task"
+                                >
+                                  <Archive size={14} />
+                                </button>
+                                <button 
+                                  onClick={() => handleDeleteTask(t.id)}
+                                  className="btn btn-ghost" 
+                                  style={{ padding: "0.25rem", color: "var(--color-error)" }}
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </>
                             )}
-                            <button 
-                              onClick={() => handleDeleteTask(t.id)}
-                              className="btn btn-ghost" 
-                              style={{ padding: "0.25rem", color: "var(--color-error)" }}
-                            >
-                              <Trash2 size={14} />
-                            </button>
                           </div>
                         </div>
                       ))}
@@ -1070,18 +1150,69 @@ function DashboardContent() {
                   </form>
 
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "1.5rem" }}>
-                    {projects.map(p => (
-                      <div key={p.id} className="paper-card" style={{ display: "flex", flexDirection: "column", justifyContent: "space-between", height: "160px" }}>
+                    {projects
+                      .filter(p => showArchived ? p.is_archived : !p.is_archived)
+                      .sort((a, b) => (a.sort_order ?? 999) - (b.sort_order ?? 999))
+                      .map(p => (
+                      <div
+                        key={p.id}
+                        className="paper-card project-card"
+                        draggable={!showArchived}
+                        onDragStart={() => setDraggedProjectId(p.id)}
+                        onDragOver={(e) => { e.preventDefault(); setDragOverProjectId(p.id); }}
+                        onDragEnd={() => { setDraggedProjectId(null); setDragOverProjectId(null); }}
+                        onDrop={async (e) => {
+                          e.preventDefault();
+                          if (!draggedProjectId || draggedProjectId === p.id) { setDraggedProjectId(null); setDragOverProjectId(null); return; }
+                          const activeProjects = projects.filter(pr => !pr.is_archived);
+                          const draggedIdx = activeProjects.findIndex(pr => pr.id === draggedProjectId);
+                          const targetIdx = activeProjects.findIndex(pr => pr.id === p.id);
+                          if (draggedIdx === -1 || targetIdx === -1) { setDraggedProjectId(null); setDragOverProjectId(null); return; }
+                          const reordered = [...activeProjects];
+                          const [moved] = reordered.splice(draggedIdx, 1);
+                          reordered.splice(targetIdx, 0, moved);
+                          setProjects(reordered);
+                          await reorderProjects(reordered.map(pr => pr.id));
+                          setDraggedProjectId(null); setDragOverProjectId(null);
+                        }}
+                        style={{
+                          display: "flex", flexDirection: "column", justifyContent: "space-between", height: "160px",
+                          opacity: p.is_archived ? 0.6 : 1,
+                          ...(p.id === draggedProjectId ? { opacity: 0.4, borderStyle: "dashed" } : {}),
+                          ...(p.id === dragOverProjectId ? { borderColor: "var(--brand-accent)", backgroundColor: "var(--brand-accent-light)" } : {}),
+                        }}
+                      >
                         <div>
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                             <h3 style={{ fontSize: "1.15rem" }}>{p.title}</h3>
-                            <button 
-                              onClick={() => handleDeleteProject(p.id)}
-                              className="btn btn-ghost" 
-                              style={{ padding: 0, color: "var(--color-error)" }}
-                            >
-                              <Trash2 size={14} />
-                            </button>
+                            <div style={{ display: "flex", gap: "0.25rem", alignItems: "center" }}>
+                              {p.is_archived ? (
+                                <button
+                                  onClick={async () => { await unarchiveProject(p.id); setProjects(prev => prev.map(pr => pr.id === p.id ? { ...pr, is_archived: false } : pr)); }}
+                                  className="btn btn-ghost"
+                                  style={{ padding: 0, color: "var(--color-success)" }}
+                                  title="Restore project"
+                                >
+                                  <Archive size={14} />
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={async () => { await archiveProject(p.id); setProjects(prev => prev.map(pr => pr.id === p.id ? { ...pr, is_archived: true } : pr)); }}
+                                  className="btn btn-ghost"
+                                  style={{ padding: 0, color: "var(--text-muted)" }}
+                                  title="Archive project"
+                                >
+                                  <Archive size={14} />
+                                </button>
+                              )}
+                              <button 
+                                onClick={() => handleDeleteProject(p.id)}
+                                className="btn btn-ghost" 
+                                style={{ padding: 0, color: "var(--color-error)" }}
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
                           </div>
                           <p style={{ color: "var(--text-muted)", fontSize: "0.85rem", marginTop: "0.5rem" }}>
                             {p.description || "No description provided."}
@@ -1115,12 +1246,12 @@ function DashboardContent() {
                     <div>
                       <h3 style={{ marginBottom: "1rem" }}>Project Tasks</h3>
                       <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                        {tasks.filter(t => t.project_id === activeProject.id).length === 0 ? (
+                        {tasks.filter(t => t.project_id === activeProject.id && (showArchived ? t.is_archived : !t.is_archived)).length === 0 ? (
                           <div style={{ padding: "2rem", border: "1px dashed var(--border-color)", borderRadius: "var(--radius-md)", textAlign: "center", color: "var(--text-muted)" }}>
                             No tasks inside this project. Create one below!
                           </div>
                         ) : (
-                          tasks.filter(t => t.project_id === activeProject.id).map(t => (
+                          tasks.filter(t => t.project_id === activeProject.id && (showArchived ? t.is_archived : !t.is_archived)).map(t => (
                             <div key={t.id} className="task-item">
                               <div className="task-checkbox-container">
                                 <button 
@@ -1148,19 +1279,38 @@ function DashboardContent() {
                                 </div>
                               </div>
                               <div className="task-actions">
-                                {t.status !== "Completed" && (
+                                {t.is_archived ? (
                                   <button
-                                    onClick={() => openTask(t.id)}
+                                    onClick={async () => { const ut = await unarchiveTask(t.id); setTasks(prev => prev.map(t2 => t2.id === t.id ? ut : t2)); }}
                                     className="btn btn-ghost"
-                                    style={{ padding: "0.25rem", color: "var(--brand-accent)" }}
-                                    title="Open task detail"
+                                    style={{ padding: "0.25rem", color: "var(--color-success)" }}
+                                    title="Restore task"
                                   >
-                                    <Sparkles size={14} />
+                                    <Archive size={14} />
                                   </button>
+                                ) : (
+                                  <>
+                                    <button
+                                      onClick={() => openTask(t.id)}
+                                      className="btn btn-ghost"
+                                      style={{ padding: "0.25rem", color: "var(--brand-accent)" }}
+                                      title="Open task detail"
+                                    >
+                                      <Sparkles size={14} />
+                                    </button>
+                                    <button
+                                      onClick={async () => { const at = await archiveTask(t.id); setTasks(prev => prev.map(t2 => t2.id === t.id ? at : t2)); }}
+                                      className="btn btn-ghost"
+                                      style={{ padding: "0.25rem", color: "var(--text-muted)" }}
+                                      title="Archive task"
+                                    >
+                                      <Archive size={14} />
+                                    </button>
+                                    <button onClick={() => handleDeleteTask(t.id)} className="btn btn-ghost" style={{ padding: "0.25rem", color: "var(--color-error)" }}>
+                                      <Trash2 size={14} />
+                                    </button>
+                                  </>
                                 )}
-                                <button onClick={() => handleDeleteTask(t.id)} className="btn btn-ghost" style={{ padding: "0.25rem", color: "var(--color-error)" }}>
-                                  <Trash2 size={14} />
-                                </button>
                               </div>
                             </div>
                           ))
@@ -1183,6 +1333,31 @@ function DashboardContent() {
                           });
                           setTasks(prev => [newTask, ...prev]);
                           setNewTaskTitle("");
+                          // Push to Google Calendar if the user has calendar enabled
+                          if (profile?.calendar_allowed) {
+                            try {
+                              const { supabase, isSupabaseConfigured } = await import("@/lib/supabase");
+                              if (isSupabaseConfigured && supabase) {
+                                const { data: tokenData } = await supabase!
+                                  .from("user_tokens")
+                                  .select("provider_token")
+                                  .eq("user_id", newTask.user_id)
+                                  .single();
+                                if (tokenData?.provider_token) {
+                                  fetch("/api/calendar", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({
+                                      title: newTask.title,
+                                      date: newTask.due_date,
+                                      description: newTask.description,
+                                      providerToken: tokenData.provider_token,
+                                    }),
+                                  }).catch(() => {});
+                                }
+                              }
+                            } catch {}
+                          }
                         }} 
                         className="quick-add-form" 
                         style={{ marginTop: "1rem" }}

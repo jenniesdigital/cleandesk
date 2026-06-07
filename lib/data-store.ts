@@ -74,6 +74,7 @@ export async function getProjects(): Promise<Project[]> {
     const { data, error } = await supabase
       .from("projects")
       .select("*")
+      .order("sort_order", { ascending: true })
       .order("created_at", { ascending: false });
     if (!error && data) {
       setLocalData("cleandesk_projects", data);
@@ -86,12 +87,14 @@ export async function getProjects(): Promise<Project[]> {
 
 export async function createProject(title: string, description?: string): Promise<Project> {
   const projects = await getProjects();
+  const maxOrder = projects.reduce((max, p) => Math.max(max, p.sort_order ?? -1), -1);
   const newProj: Project = {
     id: `proj-${Date.now()}`,
     user_id: LOCAL_USER_ID,
     title,
     description,
     is_archived: false,
+    sort_order: maxOrder + 1,
     created_at: new Date().toISOString(),
   };
   setLocalData("cleandesk_projects", [newProj, ...projects]);
@@ -110,6 +113,78 @@ export async function deleteProject(id: string): Promise<void> {
   supabaseSync(async () => {
     await supabase!.from("projects").delete().eq("id", id);
   });
+}
+
+export async function reorderProjects(orderedIds: string[]): Promise<void> {
+  const projects = await getProjects();
+  const updatedProjects = projects.map(p => {
+    const idx = orderedIds.indexOf(p.id);
+    if (idx !== -1) return { ...p, sort_order: idx };
+    return p;
+  });
+  setLocalData("cleandesk_projects", updatedProjects);
+
+  supabaseSync(async (user) => {
+    for (let i = 0; i < orderedIds.length; i++) {
+      await supabase!.from("projects").update({ sort_order: i }).eq("id", orderedIds[i]);
+    }
+  });
+}
+
+export async function archiveProject(id: string): Promise<void> {
+  const projects = await getProjects();
+  setLocalData("cleandesk_projects", projects.map(p => p.id === id ? { ...p, is_archived: true } : p));
+
+  supabaseSync(async () => {
+    await supabase!.from("projects").update({ is_archived: true }).eq("id", id);
+  });
+}
+
+export async function unarchiveProject(id: string): Promise<void> {
+  const projects = await getProjects();
+  setLocalData("cleandesk_projects", projects.map(p => p.id === id ? { ...p, is_archived: false } : p));
+
+  supabaseSync(async () => {
+    await supabase!.from("projects").update({ is_archived: false }).eq("id", id);
+  });
+}
+
+export async function archiveTask(id: string): Promise<Task> {
+  const tasks = await getTasks();
+  let archivedTask: Task | null = null;
+  const updatedTasks = tasks.map(t => {
+    if (t.id === id) {
+      archivedTask = { ...t, is_archived: true };
+      return archivedTask;
+    }
+    return t;
+  });
+  setLocalData("cleandesk_tasks", updatedTasks);
+
+  supabaseSync(async () => {
+    await supabase!.from("tasks").update({ is_archived: true }).eq("id", id);
+  });
+
+  return archivedTask || tasks.find(t => t.id === id)!;
+}
+
+export async function unarchiveTask(id: string): Promise<Task> {
+  const tasks = await getTasks();
+  let unarchivedTask: Task | null = null;
+  const updatedTasks = tasks.map(t => {
+    if (t.id === id) {
+      unarchivedTask = { ...t, is_archived: false };
+      return unarchivedTask;
+    }
+    return t;
+  });
+  setLocalData("cleandesk_tasks", updatedTasks);
+
+  supabaseSync(async () => {
+    await supabase!.from("tasks").update({ is_archived: false }).eq("id", id);
+  });
+
+  return unarchivedTask || tasks.find(t => t.id === id)!;
 }
 
 // Tasks APIs

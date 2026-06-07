@@ -99,7 +99,7 @@ export async function GET() {
         : "";
 
       const { error: sendError } = await resend.emails.send({
-        from: "CleanDesk <digest@cleandesk.app>",
+        from: "CleanDesk <onboarding@resend.dev>",
         to: [email],
         subject: `Good morning, ${profile.name}! Here's your CleanDesk for today`,
         html: `

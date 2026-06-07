@@ -18,6 +18,7 @@ export interface Project {
   title: string;
   description?: string;
   is_archived: boolean;
+  sort_order?: number;
   created_at: string;
 }
 
@@ -29,6 +30,7 @@ export interface Task {
   description?: string;
   due_date: string | null; // YYYY-MM-DD
   due_time: string | null; // HH:MM
+  is_archived?: boolean;
   priority: "High" | "Medium" | "Low";
   status: "To Do" | "In Progress" | "Completed";
   recurring_rule?: {

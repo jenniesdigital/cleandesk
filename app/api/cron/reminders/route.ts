@@ -79,7 +79,7 @@ export async function GET() {
       const reminderLabel = is24hReminder ? "tomorrow" : "in 1 hour";
 
       const { error: sendError } = await resend.emails.send({
-        from: "CleanDesk <reminders@cleandesk.app>",
+        from: "CleanDesk <onboarding@resend.dev>",
         to: [email],
         subject: `Reminder: "${task.title}" is due ${reminderLabel}`,
         html: `
