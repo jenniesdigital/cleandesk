@@ -45,8 +45,7 @@ Guidelines:
 
     // Initialize Gemini API
     const genAI = new GoogleGenerativeAI(apiKey);
-    // Use gemini-2.5-flash-lite (free tier, not deprecated)
-
+    const model = genAI.getGenerativeModel({
       model: "gemini-2.5-flash-lite",
       systemInstruction: systemInstruction
     });
