@@ -37,8 +37,8 @@ function DashboardContent() {
     return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   };
   
-  // App views: 'dashboard', 'projects', 'stats', 'settings'
-  const [activeView, setActiveView] = useState<"dashboard" | "projects" | "stats" | "settings">("dashboard");
+  // App views: 'dashboard', 'projects', 'stats', 'settings', 'archive'
+  const [activeView, setActiveView] = useState<"dashboard" | "projects" | "stats" | "settings" | "archive">("dashboard");
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">(getInitialTheme);
   const [currentUser, setCurrentUser] = useState<{ id: string; email?: string } | null>(null);
@@ -87,8 +87,7 @@ function DashboardContent() {
   const [draggedProjectId, setDraggedProjectId] = useState<string | null>(null);
   const [dragOverProjectId, setDragOverProjectId] = useState<string | null>(null);
 
-  // Archive view
-  const [showArchived, setShowArchived] = useState(false);
+
 
   // Stats period view
   const [statsPeriod, setStatsPeriod] = useState<"daily" | "weekly" | "monthly">("weekly");
@@ -601,20 +600,20 @@ function DashboardContent() {
     setBreakdownSuggestions([]);
   };
 
-  // Stats Calculator
-  const totalTasks = tasks.length;
-  const completedTasks = tasks.filter(t => t.status === "Completed").length;
-  const activeTasksCount = tasks.filter(t => t.status !== "Completed").length;
-  const tasksDueToday = tasks.filter(t => {
+  // Stats Calculator (excludes archived items)
+  const activeTasks = tasks.filter(t => !t.is_archived);
+  const totalTasks = activeTasks.length;
+  const completedTasks = activeTasks.filter(t => t.status === "Completed").length;
+  const activeTasksCount = activeTasks.filter(t => t.status !== "Completed").length;
+  const tasksDueToday = activeTasks.filter(t => {
     const todayStr = new Date().toISOString().split("T")[0];
     return t.due_date === todayStr && t.status !== "Completed";
   }).length;
   const activeProjectsCount = projects.filter(p => !p.is_archived).length;
   const completionRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
 
-  // Filter tasks list based on active filter tabs
+  // Filter tasks list based on active filter tabs (always excludes archived)
   const filteredTasks = tasks.filter(t => {
-    if (showArchived) return t.is_archived;
     if (t.is_archived) return false;
     const todayStr = new Date().toISOString().split("T")[0];
     if (taskFilter === "today") {
@@ -771,6 +770,14 @@ function DashboardContent() {
             >
               <Settings size={18} /> <span>Settings</span>
             </button>
+            <div style={{ borderTop: "1px solid var(--border-color)", margin: "0.5rem 0.75rem" }}></div>
+            <button 
+              className={`sidebar-link ${activeView === "archive" ? "active" : ""}`}
+              onClick={() => setActiveView("archive")}
+              title="Archive"
+            >
+              <Archive size={18} /> <span>Archive</span>
+            </button>
           </nav>
         </div>
 
@@ -815,15 +822,6 @@ function DashboardContent() {
             </div>
           </div>
           <div className="dashboard-header-actions">
-            <button
-              className={`icon-btn ${showArchived ? "active" : ""}`}
-              onClick={() => setShowArchived(prev => !prev)}
-              aria-label="Archived items"
-              title={showArchived ? "Hide archived" : "Show archived"}
-              style={{ color: showArchived ? "var(--brand-accent)" : undefined }}
-            >
-              <Archive size={18} />
-            </button>
             <button
               className="icon-btn"
               onClick={toggleTheme}
@@ -1151,13 +1149,13 @@ function DashboardContent() {
 
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "1.5rem" }}>
                     {projects
-                      .filter(p => showArchived ? p.is_archived : !p.is_archived)
+                      .filter(p => !p.is_archived)
                       .sort((a, b) => (a.sort_order ?? 999) - (b.sort_order ?? 999))
                       .map(p => (
                       <div
                         key={p.id}
                         className="paper-card project-card"
-                        draggable={!showArchived}
+                        draggable={true}
                         onDragStart={() => setDraggedProjectId(p.id)}
                         onDragOver={(e) => { e.preventDefault(); setDragOverProjectId(p.id); }}
                         onDragEnd={() => { setDraggedProjectId(null); setDragOverProjectId(null); }}
@@ -1246,12 +1244,12 @@ function DashboardContent() {
                     <div>
                       <h3 style={{ marginBottom: "1rem" }}>Project Tasks</h3>
                       <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                        {tasks.filter(t => t.project_id === activeProject.id && (showArchived ? t.is_archived : !t.is_archived)).length === 0 ? (
+                        {tasks.filter(t => t.project_id === activeProject.id && !t.is_archived).length === 0 ? (
                           <div style={{ padding: "2rem", border: "1px dashed var(--border-color)", borderRadius: "var(--radius-md)", textAlign: "center", color: "var(--text-muted)" }}>
                             No tasks inside this project. Create one below!
                           </div>
                         ) : (
-                          tasks.filter(t => t.project_id === activeProject.id && (showArchived ? t.is_archived : !t.is_archived)).map(t => (
+                          tasks.filter(t => t.project_id === activeProject.id && !t.is_archived).map(t => (
                             <div key={t.id} className="task-item">
                               <div className="task-checkbox-container">
                                 <button 
@@ -1759,6 +1757,81 @@ function DashboardContent() {
             </div>
           )}
 
+          {/* VIEW: ARCHIVE */}
+          {activeView === "archive" && (
+            <div>
+              <h3 style={{ marginBottom: "1.5rem" }}>Archive</h3>
+
+              <div className="paper-card" style={{ marginBottom: "1.5rem" }}>
+                <h4 style={{ marginBottom: "1rem" }}>Archived Tasks ({tasks.filter(t => t.is_archived).length})</h4>
+                {tasks.filter(t => t.is_archived).length === 0 ? (
+                  <p style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>No archived tasks.</p>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                    {tasks.filter(t => t.is_archived).map(t => (
+                      <div key={t.id} className="task-item">
+                        <div className="task-checkbox-container">
+                          <div>
+                            <div className="task-title-text" style={{ textDecoration: "line-through", opacity: 0.7 }}>{t.title}</div>
+                            <div className="task-meta">
+                              <span className={`badge badge-${t.priority.toLowerCase()}`}>{t.priority}</span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="task-actions">
+                          <button
+                            onClick={async () => { const ut = await unarchiveTask(t.id); setTasks(prev => prev.map(t2 => t2.id === t.id ? ut : t2)); }}
+                            className="btn btn-ghost"
+                            style={{ padding: "0.25rem", color: "var(--color-success)" }}
+                            title="Restore task"
+                          >
+                            <Archive size={14} />
+                          </button>
+                          <button onClick={() => handleDeleteTask(t.id)} className="btn btn-ghost" style={{ padding: "0.25rem", color: "var(--color-error)" }}>
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="paper-card">
+                <h4 style={{ marginBottom: "1rem" }}>Archived Projects ({projects.filter(p => p.is_archived).length})</h4>
+                {projects.filter(p => p.is_archived).length === 0 ? (
+                  <p style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>No archived projects.</p>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                    {projects.filter(p => p.is_archived).map(p => (
+                      <div key={p.id} className="task-item">
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flex: 1 }}>
+                          <BookOpen size={16} style={{ opacity: 0.5 }} />
+                          <div>
+                            <div style={{ opacity: 0.7 }}>{p.title}</div>
+                            {p.description && <div style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>{p.description}</div>}
+                          </div>
+                        </div>
+                        <div className="task-actions">
+                          <button
+                            onClick={async () => { await unarchiveProject(p.id); setProjects(prev => prev.map(pr => pr.id === p.id ? { ...pr, is_archived: false } : pr)); }}
+                            className="btn btn-ghost"
+                            style={{ padding: "0.25rem", color: "var(--color-success)" }}
+                            title="Restore project"
+                          >
+                            <Archive size={14} />
+                          </button>
+                          <button onClick={() => handleDeleteProject(p.id)} className="btn btn-ghost" style={{ padding: "0.25rem", color: "var(--color-error)" }}>
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </main>
 
