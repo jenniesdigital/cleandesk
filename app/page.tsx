@@ -60,15 +60,15 @@ const faqs = [
   },
   {
     q: "My data syncs across devices?",
-    a: "Yes. Sign in with the same Google account on any device and your tasks, projects, and notes are available everywhere. Data is stored securely in Supabase and cached locally for fast access.",
+    a: "Yes. Sign in with the same Google account on any device and your tasks, projects, and notes are available everywhere. Data syncs in real time and is cached locally for fast access.",
   },
   {
     q: "Can I use CleanDesk offline?",
     a: "Yes. Tasks and notes are stored locally in your browser, so you can view and edit them even without internet. Changes sync automatically when you reconnect.",
   },
   {
-    q: "What AI model does CleanDesk use?",
-    a: "We use Google's Gemini 2.5 Flash Lite for task breakdowns and brain dump parsing. It runs entirely on your request — we never train on your data.",
+    q: "Who can use CleanDesk?",
+    a: "Anyone who needs to get things done. CleanDesk is built for freelancers, startup founders, students, marketers, creatives, and anyone juggling multiple projects. If you've ever felt overwhelmed by your task list, CleanDesk is for you.",
   },
   {
     q: "Is there a mobile app?",
@@ -130,8 +130,9 @@ export default async function Home() {
             AI-powered workspace — free forever
           </div>
           <h1 className="hero-title">
-            A workspace that <span>clears your head</span> instead of adding to it.
+            A workspace that actually helps you get work done.
           </h1>
+          <div className="hero-tagline">Clear head. Clean desk.</div>
           <p className="hero-subtitle">
             Most productivity tools make you organise before you start. CleanDesk works the other way — dump whatever&apos;s on your mind and let AI sort the rest.
           </p>
@@ -229,7 +230,7 @@ export default async function Home() {
           <div className="section-header">
             <span className="section-tag">Features</span>
             <h2 className="section-title">What it does</h2>
-            <p className="section-subtitle">Four things, done well. Nothing more, nothing less.</p>
+            <p className="section-subtitle">Your digital desk, but better...</p>
           </div>
           <div className="features-grid">
             {features.map((f, i) => {
