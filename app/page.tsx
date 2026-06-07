@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, Check, Brain, Layers, Bell, Calendar, Sparkles, BarChart3, Quote, Globe, MessageSquare } from "lucide-react";
+import { ArrowRight, Check, Brain, Layers, Bell, Calendar, Sparkles, BarChart3, Quote, Globe, MessageSquare, HelpCircle } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { BinderLogo } from "@/lib/logo";
 import { SignInButton } from "@/components/sign-in-button";
@@ -49,6 +49,33 @@ const steps = [
   },
 ];
 
+const faqs = [
+  {
+    q: "Is CleanDesk really free?",
+    a: "Yes. No credit card required. The free tier includes unlimited tasks, AI brain dump, reminders, and Google Calendar sync. We may introduce paid plans for advanced features later, but core functionality stays free.",
+  },
+  {
+    q: "How is CleanDesk different from Notion or Todoist?",
+    a: "Most tools make you structure before you input. CleanDesk works backwards — you dump raw thoughts, and AI organises them into projects and tasks. It's designed for people who find setup overwhelming.",
+  },
+  {
+    q: "My data syncs across devices?",
+    a: "Yes. Sign in with the same Google account on any device and your tasks, projects, and notes are available everywhere. Data is stored securely in Supabase and cached locally for fast access.",
+  },
+  {
+    q: "Can I use CleanDesk offline?",
+    a: "Yes. Tasks and notes are stored locally in your browser, so you can view and edit them even without internet. Changes sync automatically when you reconnect.",
+  },
+  {
+    q: "What AI model does CleanDesk use?",
+    a: "We use Google's Gemini 2.5 Flash Lite for task breakdowns and brain dump parsing. It runs entirely on your request — we never train on your data.",
+  },
+  {
+    q: "Is there a mobile app?",
+    a: "Not yet. CleanDesk works as a progressive web app in your browser, so you can add it to your phone's home screen for a native-like experience. A dedicated mobile app is on the roadmap.",
+  },
+];
+
 const testimonials = [
   {
     quote: "I used to keep everything in my head. CleanDesk finally got me to stop.",
@@ -82,6 +109,7 @@ export default async function Home() {
           <a href="#features">Features</a>
           <a href="#how-it-works">How it works</a>
           <a href="#testimonials">Testimonials</a>
+          <a href="#faq">FAQ</a>
           {user ? (
             <Link href="/dashboard" className="btn btn-secondary btn-sm">
               Dashboard
@@ -300,6 +328,28 @@ export default async function Home() {
                   </div>
                 </div>
               </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* FAQ */}
+      <section id="faq" className="section faq-section">
+        <div className="section-inner">
+          <div className="section-header">
+            <span className="section-tag">Questions</span>
+            <h2 className="section-title">Frequently asked questions</h2>
+            <p className="section-subtitle">Everything you need to know before jumping in.</p>
+          </div>
+          <div className="faq-grid">
+            {faqs.map((faq, i) => (
+              <details key={i} className="faq-item fade-in">
+                <summary className="faq-question">
+                  <HelpCircle size={16} className="faq-icon" />
+                  {faq.q}
+                </summary>
+                <p className="faq-answer">{faq.a}</p>
+              </details>
             ))}
           </div>
         </div>

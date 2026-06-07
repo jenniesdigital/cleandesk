@@ -75,7 +75,10 @@ export async function getProjects(): Promise<Project[]> {
       .from("projects")
       .select("*")
       .order("created_at", { ascending: false });
-    if (!error) return data || [];
+    if (!error && data) {
+      setLocalData("cleandesk_projects", data);
+      return data;
+    }
   }
 
   return getLocalData<Project[]>("cleandesk_projects", getInitialProjects());
@@ -116,7 +119,10 @@ export async function getTasks(): Promise<Task[]> {
       .from("tasks")
       .select("*")
       .order("sort_order", { ascending: true });
-    if (!error) return data || [];
+    if (!error && data) {
+      setLocalData("cleandesk_tasks", data);
+      return data;
+    }
   }
 
   return getLocalData<Task[]>("cleandesk_tasks", getInitialTasks());

@@ -1129,13 +1129,39 @@ function DashboardContent() {
                                 >
                                   {t.status === "Completed" && <Check size={12} />}
                                 </button>
-                                <div className={`task-title-text ${t.status === "Completed" ? "completed" : ""}`}>
-                                  {t.title}
+                                <div>
+                                  <div
+                                    className={`task-title-text ${t.status === "Completed" ? "completed" : ""}`}
+                                    onClick={() => openTask(t.id)}
+                                    style={{ cursor: "pointer" }}
+                                  >
+                                    {t.title}
+                                  </div>
+                                  <div className="task-meta">
+                                    <span className={`badge badge-${t.priority.toLowerCase()}`}>{t.priority}</span>
+                                    {t.due_date && (
+                                      <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", display: "flex", alignItems: "center", gap: "0.25rem" }}>
+                                        <Clock size={10} /> {t.due_date}
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
-                              <button onClick={() => handleDeleteTask(t.id)} className="btn btn-ghost" style={{ padding: 0, color: "var(--color-error)" }}>
-                                <Trash2 size={14} />
-                              </button>
+                              <div className="task-actions">
+                                {t.status !== "Completed" && (
+                                  <button
+                                    onClick={() => openTask(t.id)}
+                                    className="btn btn-ghost"
+                                    style={{ padding: "0.25rem", color: "var(--brand-accent)" }}
+                                    title="Open task detail"
+                                  >
+                                    <Sparkles size={14} />
+                                  </button>
+                                )}
+                                <button onClick={() => handleDeleteTask(t.id)} className="btn btn-ghost" style={{ padding: "0.25rem", color: "var(--color-error)" }}>
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
                             </div>
                           ))
                         )}
