@@ -18,6 +18,7 @@ export interface Project {
   title: string;
   description?: string;
   is_archived: boolean;
+  status: "Active" | "Completed";
   sort_order?: number;
   created_at: string;
 }
@@ -34,6 +35,7 @@ export interface Task {
   completed_at?: string | null; // ISO timestamp when marked done
   priority: "High" | "Medium" | "Low";
   status: "To Do" | "In Progress" | "Completed";
+  tags?: string[];
   recurring_rule?: {
     type: "daily" | "weekly" | "monthly" | "none";
     days?: string[];

@@ -71,14 +71,18 @@ export async function saveProfile(profile: Omit<Profile, "id" | "created_at">): 
 // Projects APIs
 export async function getProjects(): Promise<Project[]> {
   if (isSupabaseConfigured && supabase) {
-    const { data, error } = await supabase
-      .from("projects")
-      .select("*")
-      .order("sort_order", { ascending: true })
-      .order("created_at", { ascending: false });
-    if (!error && data && data.length > 0) {
-      setLocalData("cleandesk_projects", data);
-      return data;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data, error } = await supabase
+        .from("projects")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("sort_order", { ascending: true })
+        .order("created_at", { ascending: false });
+      if (!error && data && data.length > 0) {
+        setLocalData("cleandesk_projects", data);
+        return data;
+      }
     }
   }
 
@@ -94,6 +98,7 @@ export async function createProject(title: string, description?: string): Promis
     title,
     description,
     is_archived: false,
+    status: "Active",
     sort_order: maxOrder + 1,
     created_at: new Date().toISOString(),
   };
@@ -116,7 +121,7 @@ export async function deleteProject(id: string): Promise<void> {
 }
 
 export async function reorderProjects(orderedIds: string[]): Promise<void> {
-  const projects = await getProjects();
+  const projects = getLocalData<Project[]>("cleandesk_projects", []);
   const updatedProjects = projects.map(p => {
     const idx = orderedIds.indexOf(p.id);
     if (idx !== -1) return { ...p, sort_order: idx };
@@ -190,13 +195,17 @@ export async function unarchiveTask(id: string): Promise<Task> {
 // Tasks APIs
 export async function getTasks(): Promise<Task[]> {
   if (isSupabaseConfigured && supabase) {
-    const { data, error } = await supabase
-      .from("tasks")
-      .select("*")
-      .order("sort_order", { ascending: true });
-    if (!error && data && data.length > 0) {
-      setLocalData("cleandesk_tasks", data);
-      return data;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data, error } = await supabase
+        .from("tasks")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("sort_order", { ascending: true });
+      if (!error && data && data.length > 0) {
+        setLocalData("cleandesk_tasks", data);
+        return data;
+      }
     }
   }
 
@@ -205,10 +214,11 @@ export async function getTasks(): Promise<Task[]> {
 
 async function supabaseSync(
   fn: (user: { id: string }) => void | Promise<void>
-): Promise<void> {
-  if (!isSupabaseConfigured || !supabase) return;
+): Promise<boolean> {
+  if (!isSupabaseConfigured || !supabase) return false;
   const { data: { user } } = await supabase.auth.getUser();
-  if (user) try { await fn(user); } catch {}
+  if (user) try { await fn(user); return true; } catch (e) { console.warn("Supabase sync failed:", e); return false; }
+  return false;
 }
 
 export async function createTask(task: Omit<Task, "id" | "user_id" | "created_at">): Promise<Task> {
@@ -334,4 +344,81 @@ export async function saveNote(projectId: string, title: string, content: string
   });
 
   return savedNote;
+}
+
+export async function deleteNote(id: string): Promise<void> {
+  const allNotes = getLocalData<Note[]>("cleandesk_notes", []);
+  setLocalData("cleandesk_notes", allNotes.filter(n => n.id !== id));
+
+  supabaseSync(async () => {
+    await supabase!.from("notes").delete().eq("id", id);
+  });
+}
+
+// Project status helpers
+export async function completeProject(id: string): Promise<void> {
+  const projects = await getProjects();
+  setLocalData("cleandesk_projects", projects.map(p => p.id === id ? { ...p, status: "Completed" } : p));
+
+  supabaseSync(async () => {
+    await supabase!.from("projects").update({ status: "Completed" }).eq("id", id);
+  });
+}
+
+export async function reopenProject(id: string): Promise<void> {
+  const projects = await getProjects();
+  setLocalData("cleandesk_projects", projects.map(p => p.id === id ? { ...p, status: "Active" } : p));
+
+  supabaseSync(async () => {
+    await supabase!.from("projects").update({ status: "Active" }).eq("id", id);
+  });
+}
+
+export async function pushToCloud(): Promise<{ success: boolean; message?: string }> {
+  if (!isSupabaseConfigured || !supabase) return { success: false, message: "Supabase not configured" };
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { success: false, message: "Not signed in" };
+
+  const profile = getLocalData("cleandesk_profile", null);
+  const projects = getLocalData("cleandesk_projects", []);
+  const tasks = getLocalData("cleandesk_tasks", []);
+  const notes = getLocalData("cleandesk_notes", []);
+
+  try {
+    const res = await fetch("/api/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profile, projects, tasks, notes }),
+    });
+    const data = await res.json();
+    return data;
+  } catch (e: unknown) {
+    return { success: false, message: String(e) };
+  }
+}
+
+export async function pullFromCloud(): Promise<{ success: boolean; message?: string; projects?: Project[]; tasks?: Task[]; notes?: Note[] }> {
+  if (!isSupabaseConfigured || !supabase) return { success: false, message: "Supabase not configured" };
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { success: false, message: "Not signed in" };
+
+  try {
+    const [projectsRes, tasksRes, notesRes] = await Promise.all([
+      supabase.from("projects").select("*").eq("user_id", user.id),
+      supabase.from("tasks").select("*").eq("user_id", user.id),
+      supabase.from("notes").select("*").eq("user_id", user.id),
+    ]);
+
+    const projects = (projectsRes.data || []) as unknown as Project[];
+    const tasks = (tasksRes.data || []) as unknown as Task[];
+    const notes = (notesRes.data || []) as unknown as Note[];
+
+    if (projects.length > 0) setLocalData("cleandesk_projects", projects);
+    if (tasks.length > 0) setLocalData("cleandesk_tasks", tasks);
+    if (notes.length > 0) setLocalData("cleandesk_notes", notes);
+
+    return { success: true, projects, tasks, notes };
+  } catch (e: unknown) {
+    return { success: false, message: String(e) };
+  }
 }

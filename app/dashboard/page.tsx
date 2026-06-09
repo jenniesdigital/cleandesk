@@ -1,23 +1,25 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { 
   Inbox, Clock, Sparkles, Plus, 
   Trash2, Settings, LineChart, BookOpen, 
   ArrowRight, Check, FileText,
   PanelLeftClose, PanelLeftOpen, Sun, Moon, LogOut,
-  GripVertical, Archive
+  GripVertical, Archive, Search, Tag, Calendar, Columns, Upload
 } from "lucide-react";
 import "../dashboard.css";
 import { 
   getProfile, saveProfile, getProjects, createProject, deleteProject,
   getTasks, createTask, updateTask, deleteTask, reorderTasks, reorderProjects,
   archiveTask, unarchiveTask, archiveProject, unarchiveProject,
-  getNotes, saveNote
+  getNotes, saveNote, deleteNote, completeProject, reopenProject, pushToCloud, pullFromCloud
 } from "@/lib/data-store";
 import { Profile, Project, Task, Note } from "@/lib/types";
 import { BinderLogo } from "@/lib/logo";
+import ToastContainer from "@/components/toast";
+import { showToast } from "@/components/toast";
 
 export default function Dashboard() {
   return (
@@ -37,8 +39,8 @@ function DashboardContent() {
     return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   };
   
-  // App views: 'dashboard', 'projects', 'stats', 'settings', 'archive'
-  const [activeView, setActiveView] = useState<"dashboard" | "projects" | "stats" | "settings" | "archive">("dashboard");
+  // App views
+  const [activeView, setActiveView] = useState<"dashboard" | "projects" | "stats" | "settings" | "archive" | "calendar" | "kanban">("dashboard");
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">(getInitialTheme);
   const [currentUser, setCurrentUser] = useState<{ id: string; email?: string } | null>(null);
@@ -73,6 +75,9 @@ function DashboardContent() {
   // Task filter tab: 'today', 'upcoming', 'completed'
   const [taskFilter, setTaskFilter] = useState<"today" | "upcoming" | "completed">("today");
 
+  // Calendar month tab: 0 = this month, 1 = next month
+  const [calendarMonth, setCalendarMonth] = useState(0);
+
   // AI Brain Dump States
   const [brainDumpText, setBrainDumpText] = useState("");
   const [isAIProcessing, setIsAIProcessing] = useState(false);
@@ -86,10 +91,23 @@ function DashboardContent() {
   const [dragOverTaskId, setDragOverTaskId] = useState<string | null>(null);
   const [draggedProjectId, setDraggedProjectId] = useState<string | null>(null);
   const [dragOverProjectId, setDragOverProjectId] = useState<string | null>(null);
+  const [insertIndex, setInsertIndex] = useState<number | null>(null);
+  const [insertLineY, setInsertLineY] = useState<number | null>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
 
 
 
-  // Stats period view
+  // Loading state
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Search
+  const [searchQuery, setSearchQuery] = useState("");
+
+  // Tag editing in detail overlay
+  const [taskEditTags, setTaskEditTags] = useState<string[]>([]);
+
+  // Calendar day detail overlay
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [statsPeriod, setStatsPeriod] = useState<"daily" | "weekly" | "monthly">("weekly");
 
   // Task detail view state
@@ -111,8 +129,27 @@ function DashboardContent() {
   // Load initial data
   useEffect(() => {
     async function loadData() {
+      setIsLoading(true);
       const p = await getProfile();
       if (!p || searchParams.get("onboard") === "true") {
+        // No local profile — check Supabase for returning user
+        if (!p && searchParams.get("onboard") !== "true") {
+          const cloud = await pullFromCloud();
+          if (cloud.success && cloud.projects && cloud.tasks) {
+            // Found cloud data — skip onboarding, use cloud data
+            if (cloud.projects.length > 0) setProjects(cloud.projects);
+            if (cloud.tasks.length > 0) setTasks(cloud.tasks);
+            // Re-check profile after pull
+            const cloudProfile = await getProfile();
+            if (cloudProfile) {
+              setProfile(cloudProfile);
+              setOnboardName(cloudProfile.name);
+              setOnboardRoles(cloudProfile.role);
+              setIsLoading(false);
+              return;
+            }
+          }
+        }
         setShowOnboarding(true);
       } else {
         setProfile(p);
@@ -125,6 +162,17 @@ function DashboardContent() {
 
       const t = await getTasks();
       setTasks(t);
+
+      // Notify about tasks due today
+      setIsLoading(false);
+      const todayStr = new Date().toISOString().split("T")[0];
+      const dueToday = t.filter(tk => tk.due_date === todayStr && tk.status !== "Completed" && !tk.is_archived);
+      if (dueToday.length > 0 && "Notification" in window && Notification.permission === "default") {
+        Notification.requestPermission();
+      }
+      if (dueToday.length > 0 && "Notification" in window && Notification.permission === "granted") {
+        new Notification("CleanDesk", { body: `${dueToday.length} task${dueToday.length > 1 ? "s" : ""} due today.`, icon: "/favicon.ico" });
+      }
     }
     loadData();
 
@@ -141,6 +189,16 @@ function DashboardContent() {
     // Clean up query params after fresh sign-in
     if (searchParams.get("fresh_signin") === "true") {
       router.replace("/dashboard");
+      // Push local data to cloud, then pull cloud data
+      pushToCloud().then(async pushRes => {
+        if (pushRes.success) {
+          const pullRes = await pullFromCloud();
+          if (pullRes.success && pullRes.projects && pullRes.tasks) {
+            setProjects(pullRes.projects);
+            setTasks(pullRes.tasks);
+          }
+        }
+      });
     }
   }, [searchParams]);
 
@@ -268,17 +326,63 @@ function DashboardContent() {
   // Toggle task complete
   const handleToggleTask = async (id: string, currentStatus: string) => {
     const newStatus = currentStatus === "Completed" ? "To Do" : "Completed";
+    const now = new Date();
     const updated = await updateTask(id, { 
       status: newStatus, 
-      completed_at: newStatus === "Completed" ? new Date().toISOString() : null 
+      completed_at: newStatus === "Completed" ? now.toISOString() : null 
     });
     setTasks(prev => prev.map(t => t.id === id ? updated : t));
+
+    // Recurring task: auto-create next occurrence when marked done
+    if (newStatus === "Completed") {
+      const task = tasks.find(t => t.id === id);
+      if (task?.recurring_rule && task.recurring_rule.type !== "none") {
+        const nextDate = new Date(task.due_date || now.toISOString().split("T")[0]);
+        if (task.recurring_rule.type === "daily") nextDate.setDate(nextDate.getDate() + 1);
+        else if (task.recurring_rule.type === "weekly") nextDate.setDate(nextDate.getDate() + 7);
+        else if (task.recurring_rule.type === "monthly") nextDate.setMonth(nextDate.getMonth() + 1);
+        const nextTask = await createTask({
+          project_id: task.project_id,
+          title: task.title,
+          description: task.description || "",
+          due_date: nextDate.toISOString().split("T")[0],
+          due_time: task.due_time || "12:00",
+          priority: task.priority,
+          status: "To Do",
+          tags: task.tags || [],
+          recurring_rule: task.recurring_rule,
+        });
+        setTasks(prev => [nextTask, ...prev]);
+        showToast({ text: `Recurring "${task.title}" created for ${nextDate.toISOString().split("T")[0]}` });
+      }
+    }
   };
 
-  // Delete a task
+  // Delete a task (with undo)
   const handleDeleteTask = async (id: string) => {
+    const taskToDelete = tasks.find(t => t.id === id);
+    if (!taskToDelete) return;
     await deleteTask(id);
     setTasks(prev => prev.filter(t => t.id !== id));
+    showToast({
+      text: `"${taskToDelete.title}" deleted`,
+      action: {
+        label: "Undo",
+        onClick: async () => {
+          const restored = await createTask({
+            project_id: taskToDelete.project_id,
+            title: taskToDelete.title,
+            description: taskToDelete.description,
+            due_date: taskToDelete.due_date,
+            due_time: taskToDelete.due_time || "12:00",
+            priority: taskToDelete.priority,
+            status: taskToDelete.status,
+            tags: taskToDelete.tags || [],
+          });
+          setTasks(prev => [restored, ...prev]);
+        }
+      }
+    });
   };
 
   // Task detail view handlers
@@ -296,6 +400,7 @@ function DashboardContent() {
     setTaskEditPriority(t.priority);
     setTaskEditProject(t.project_id || "");
     setTaskEditStatus(t.status);
+    setTaskEditTags(t.tags || []);
   };
 
   const closeTask = () => {
@@ -313,6 +418,7 @@ function DashboardContent() {
       priority: taskEditPriority,
       project_id: taskEditProject || null,
       status: taskEditStatus,
+      tags: taskEditTags,
     });
     setTasks(prev => prev.map(t => t.id === activeTaskId ? updated : t));
   };
@@ -381,6 +487,29 @@ function DashboardContent() {
     }
   };
 
+  // Sync local data to cloud
+  const [syncing, setSyncing] = useState(false);
+  const syncToCloud = async () => {
+    setSyncing(true);
+    // Push local data to Supabase
+    const pushResult = await pushToCloud();
+    if (!pushResult.success) {
+      setSyncing(false);
+      showToast({ text: pushResult.message || "Sync failed" });
+      return;
+    }
+    // Pull remote data from Supabase
+    const pullResult = await pullFromCloud();
+    if (pullResult.success) {
+      if (pullResult.projects) setProjects(pullResult.projects);
+      if (pullResult.tasks) setTasks(pullResult.tasks);
+      showToast({ text: "Sync complete" });
+    } else {
+      showToast({ text: pullResult.message || "Pull failed" });
+    }
+    setSyncing(false);
+  };
+
   // Save active note
   const handleSaveNote = async () => {
     if (!activeProject) return;
@@ -397,6 +526,33 @@ function DashboardContent() {
     );
     setActiveNote(saved);
   };
+
+  // Delete a note
+  const handleDeleteNote = async (noteId: string) => {
+    await deleteNote(noteId);
+    setProjectNotes(prev => prev.filter(n => n.id !== noteId));
+    if (activeNote?.id === noteId) {
+      setActiveNote(null);
+      setNoteTitle("Untitled Note");
+      setNoteContent("");
+    }
+  };
+
+  // Auto-save current note when switching notes within the same project
+  const autoSaveNote = useRef(false);
+  const prevActiveNoteRef = useRef<string | null>(null);
+  const prevProjectRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!autoSaveNote.current) { autoSaveNote.current = true; prevProjectRef.current = activeProject?.id || null; return; }
+    const currentProjectId = activeProject?.id || null;
+    const previousProjectId = prevProjectRef.current;
+    prevProjectRef.current = currentProjectId;
+    // Only auto-save if we're still in the same project (switching between notes, not switching projects)
+    if (currentProjectId === previousProjectId && prevActiveNoteRef.current && prevActiveNoteRef.current !== activeNote?.id) {
+      handleSaveNote();
+    }
+    prevActiveNoteRef.current = activeNote?.id || null;
+  }, [activeNote?.id, activeProject?.id]);
 
   // Create new blank note
   const handleNewNote = () => {
@@ -620,9 +776,14 @@ function DashboardContent() {
   const activeProjectsCount = projects.filter(p => !p.is_archived).length;
   const completionRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
 
+  // Search-matched tasks (for project/task filtering)
+  const q = searchQuery.toLowerCase().trim();
+  const matchesSearch = (t: Task) => !q || t.title.toLowerCase().includes(q) || (t.tags || []).some(tag => tag.toLowerCase().includes(q));
+
   // Filter tasks list based on active filter tabs (always excludes archived)
   const filteredTasks = tasks.filter(t => {
     if (t.is_archived) return false;
+    if (!matchesSearch(t)) return false;
     const todayStr = new Date().toISOString().split("T")[0];
     if (taskFilter === "today") {
       return t.due_date === todayStr && t.status !== "Completed";
@@ -641,6 +802,16 @@ function DashboardContent() {
 
   return (
     <div className={`dashboard-container ${isSidebarCollapsed ? "sidebar-collapsed" : ""}`}>
+      {/* Loading state */}
+      {isLoading && !showOnboarding && (
+        <div className="loading-skeleton">
+          <div className="spinner" />
+          <p>Loading your workspace...</p>
+        </div>
+      )}
+
+      {!isLoading && (
+      <>
       {/* 1. ONBOARDING OVERLAY */}
       {showOnboarding && (
         <div className="onboarding-overlay">
@@ -771,6 +942,20 @@ function DashboardContent() {
               <BookOpen size={18} /> <span>Projects</span>
             </button>
             <button 
+              className={`sidebar-link ${activeView === "calendar" ? "active" : ""}`}
+              onClick={() => setActiveView("calendar")}
+              title="Calendar"
+            >
+              <Calendar size={18} /> <span>Calendar</span>
+            </button>
+            <button 
+              className={`sidebar-link ${activeView === "kanban" ? "active" : ""}`}
+              onClick={() => setActiveView("kanban")}
+              title="Kanban"
+            >
+              <Columns size={18} /> <span>Kanban</span>
+            </button>
+            <button 
               className={`sidebar-link ${activeView === "stats" ? "active" : ""}`}
               onClick={() => setActiveView("stats")}
               title="Statistics"
@@ -835,6 +1020,16 @@ function DashboardContent() {
               </p>
             </div>
           </div>
+          <div className="search-bar">
+            <Search size={15} />
+            <input
+              type="text"
+              placeholder="Search tasks, tags..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            {searchQuery && <button className="btn btn-ghost" style={{ padding: 0, fontSize: "1rem", lineHeight: 1, opacity: 0.5 }} onClick={() => setSearchQuery("")}>×</button>}
+          </div>
           <div className="dashboard-header-actions">
             <button
               className="icon-btn"
@@ -843,6 +1038,9 @@ function DashboardContent() {
               title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
             >
               {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
+            </button>
+            <button className="btn btn-ghost" style={{ fontSize: "0.85rem" }} onClick={syncToCloud} disabled={syncing} title="Sync local data to cloud">
+              <Upload size={14} /> {syncing ? "Syncing..." : "Sync"}
             </button>
             <a href="/auth/signout" className="btn btn-secondary" style={{ fontSize: "0.85rem" }}>
               <LogOut size={14} /> Sign out
@@ -1003,14 +1201,42 @@ function DashboardContent() {
                                     #{projects.find(p => p.id === t.project_id)?.title}
                                   </span>
                                 )}
-                                {t.due_date && (
-                                  <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", display: "flex", alignItems: "center", gap: "0.25rem" }}>
+                                {t.due_date ? (
+                                  <span
+                                    style={{ fontSize: "0.75rem", color: "var(--text-muted)", display: "flex", alignItems: "center", gap: "0.25rem", cursor: "pointer" }}
+                                    onClick={(e) => { e.stopPropagation(); const d = prompt("New due date (YYYY-MM-DD):", t.due_date ?? undefined); if (d) { updateTask(t.id, { due_date: d }); setTasks(prev => prev.map(t2 => t2.id === t.id ? { ...t2, due_date: d } : t2)); } }}
+                                    title="Click to change date"
+                                  >
                                     <Clock size={10} /> {t.due_date}
                                   </span>
+                                ) : (
+                                  <span
+                                    style={{ fontSize: "0.75rem", color: "var(--text-muted)", cursor: "pointer", opacity: 0.5 }}
+                                    onClick={(e) => { e.stopPropagation(); const d = prompt("Set due date (YYYY-MM-DD):"); if (d) { updateTask(t.id, { due_date: d }); setTasks(prev => prev.map(t2 => t2.id === t.id ? { ...t2, due_date: d } : t2)); } }}
+                                    title="Add due date"
+                                  >
+                                    <Clock size={10} /> Set date
+                                  </span>
                                 )}
-                                <span className={`badge badge-${t.priority.toLowerCase()}`}>
+                                <span
+                                  className={`badge badge-${t.priority.toLowerCase()}`}
+                                  style={{ cursor: "pointer" }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const cycle: Record<string, "High" | "Medium" | "Low"> = { High: "Medium", Medium: "Low", Low: "High" };
+                                    const nextPri = cycle[t.priority];
+                                    updateTask(t.id, { priority: nextPri });
+                                    setTasks(prev => prev.map(t2 => t2.id === t.id ? { ...t2, priority: nextPri } : t2));
+                                  }}
+                                  title="Click to cycle priority"
+                                >
                                   {t.priority}
                                 </span>
+                                {(t.tags || []).length > 0 && t.tags!.map(tag => (
+                                  <span key={tag} style={{ fontSize: "0.7rem", padding: "0.1rem 0.4rem", borderRadius: "var(--radius-full)", backgroundColor: "var(--brand-accent-light)", color: "var(--brand-accent)" }}>
+                                    {tag}
+                                  </span>
+                                ))}
                               </div>
                             </div>
                           </div>
@@ -1161,95 +1387,153 @@ function DashboardContent() {
                     <button type="submit" className="btn btn-primary">Create Project</button>
                   </form>
 
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "1.5rem" }}>
-                    {projects
-                      .filter(p => !p.is_archived)
-                      .sort((a, b) => (a.sort_order ?? 999) - (b.sort_order ?? 999))
-                      .map(p => (
+                  {(() => {
+                    const activeProjects = projects
+                      .filter(p => !p.is_archived && p.status !== "Completed")
+                      .sort((a, b) => (a.sort_order ?? 999) - (b.sort_order ?? 999));
+
+                    return (
                       <div
-                        key={p.id}
-                        className="paper-card project-card"
-                        draggable={true}
-                        onDragStart={() => setDraggedProjectId(p.id)}
-                        onDragOver={(e) => { e.preventDefault(); setDragOverProjectId(p.id); }}
-                        onDragEnd={() => { setDraggedProjectId(null); setDragOverProjectId(null); }}
+                        ref={gridRef}
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+                          gap: "1.5rem",
+                          position: "relative",
+                        }}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          if (!draggedProjectId || !gridRef.current) return;
+                          const cards = gridRef.current.querySelectorAll<HTMLElement>("[data-project-id]");
+                          if (cards.length === 0) return;
+                          const containerRect = gridRef.current.getBoundingClientRect();
+                          const mouseY = e.clientY - containerRect.top;
+                          let targetIdx = activeProjects.length;
+                          let lineY = 0;
+                          let minDist = Infinity;
+                          cards.forEach((card, idx) => {
+                            const r = card.getBoundingClientRect();
+                            const ct = r.top - containerRect.top;
+                            const cb = r.bottom - containerRect.top;
+                            const mid = (ct + cb) / 2;
+                            const dist = Math.abs(mouseY - mid);
+                            if (dist < minDist) {
+                              minDist = dist;
+                              targetIdx = mouseY < mid ? idx : idx + 1;
+                              lineY = mouseY < mid ? ct : cb;
+                            }
+                          });
+                          setInsertIndex(Math.min(targetIdx, activeProjects.length));
+                          setInsertLineY(lineY);
+                        }}
+                        onDragLeave={(e) => {
+                          if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                            setInsertIndex(null); setInsertLineY(null);
+                          }
+                        }}
                         onDrop={async (e) => {
                           e.preventDefault();
-                          if (!draggedProjectId || draggedProjectId === p.id) { setDraggedProjectId(null); setDragOverProjectId(null); return; }
-                          const activeProjects = projects.filter(pr => !pr.is_archived);
+                          if (insertIndex === null || !draggedProjectId) { setDraggedProjectId(null); setInsertIndex(null); setInsertLineY(null); return; }
                           const draggedIdx = activeProjects.findIndex(pr => pr.id === draggedProjectId);
-                          const targetIdx = activeProjects.findIndex(pr => pr.id === p.id);
-                          if (draggedIdx === -1 || targetIdx === -1) { setDraggedProjectId(null); setDragOverProjectId(null); return; }
-                          const reordered = [...activeProjects];
-                          const [moved] = reordered.splice(draggedIdx, 1);
-                          reordered.splice(targetIdx, 0, moved);
-                          setProjects(reordered);
+                          if (draggedIdx === -1) { setDraggedProjectId(null); setInsertIndex(null); setInsertLineY(null); return; }
+                          const reordered = activeProjects.filter(pr => pr.id !== draggedProjectId);
+                          const idx = Math.min(insertIndex, reordered.length);
+                          reordered.splice(idx, 0, activeProjects[draggedIdx]);
+                          setProjects(prev => prev.map(pr => {
+                            const ri = reordered.findIndex(r => r.id === pr.id);
+                            if (ri !== -1) return { ...pr, sort_order: ri };
+                            return pr;
+                          }));
                           await reorderProjects(reordered.map(pr => pr.id));
-                          setDraggedProjectId(null); setDragOverProjectId(null);
-                        }}
-                        style={{
-                          display: "flex", flexDirection: "column", justifyContent: "space-between", height: "160px",
-                          opacity: p.is_archived ? 0.6 : 1,
-                          ...(p.id === draggedProjectId ? { opacity: 0.4, borderStyle: "dashed" } : {}),
-                          ...(p.id === dragOverProjectId ? { borderColor: "var(--brand-accent)", backgroundColor: "var(--brand-accent-light)" } : {}),
+                          setDraggedProjectId(null); setInsertIndex(null); setInsertLineY(null);
                         }}
                       >
-                        <div>
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                            <h3 style={{ fontSize: "1.15rem" }}>{p.title}</h3>
-                            <div style={{ display: "flex", gap: "0.25rem", alignItems: "center" }}>
-                              {p.is_archived ? (
-                                <button
-                                  onClick={async () => { await unarchiveProject(p.id); setProjects(prev => prev.map(pr => pr.id === p.id ? { ...pr, is_archived: false } : pr)); }}
-                                  className="btn btn-ghost"
-                                  style={{ padding: 0, color: "var(--color-success)" }}
-                                  title="Restore project"
-                                >
-                                  <Archive size={14} />
-                                </button>
-                              ) : (
-                                <button
-                                  onClick={async () => { await archiveProject(p.id); setProjects(prev => prev.map(pr => pr.id === p.id ? { ...pr, is_archived: true } : pr)); }}
-                                  className="btn btn-ghost"
-                                  style={{ padding: 0, color: "var(--text-muted)" }}
-                                  title="Archive project"
-                                >
-                                  <Archive size={14} />
-                                </button>
-                              )}
+                        {activeProjects.map(p => (
+                          <div
+                            key={p.id}
+                            data-project-id={p.id}
+                            className="paper-card project-card"
+                            draggable={true}
+                            onDragStart={() => { setDraggedProjectId(p.id); setInsertIndex(null); setInsertLineY(null); }}
+                            onDragEnd={() => { setDraggedProjectId(null); setInsertIndex(null); setInsertLineY(null); }}
+                            style={{
+                              display: "flex", flexDirection: "column", justifyContent: "space-between", height: "160px", cursor: "grab",
+                              ...(p.id === draggedProjectId ? { opacity: 0.3, borderStyle: "dashed" } : {}),
+                            }}
+                          >
+                            <div>
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                                <h3 style={{ fontSize: "1.15rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                                  <GripVertical size={14} style={{ opacity: 0.3, flexShrink: 0 }} />
+                                  {p.title}
+                                </h3>
+                                <div style={{ display: "flex", gap: "0.25rem", alignItems: "center" }}>
+                                  <button
+                                    onClick={async () => { await completeProject(p.id); setProjects(prev => prev.map(pr => pr.id === p.id ? { ...pr, status: "Completed" } : pr)); }}
+                                    className="btn btn-ghost"
+                                    style={{ padding: 0, color: "var(--color-success)" }}
+                                    title="Mark project complete"
+                                  >
+                                    <Check size={14} />
+                                  </button>
+                                  <button
+                                    onClick={async () => { await archiveProject(p.id); setProjects(prev => prev.map(pr => pr.id === p.id ? { ...pr, is_archived: true } : pr)); }}
+                                    className="btn btn-ghost"
+                                    style={{ padding: 0, color: "var(--text-muted)" }}
+                                    title="Archive project"
+                                  >
+                                    <Archive size={14} />
+                                  </button>
+                                  <button 
+                                    onClick={() => handleDeleteProject(p.id)}
+                                    className="btn btn-ghost" 
+                                    style={{ padding: 0, color: "var(--color-error)" }}
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                </div>
+                              </div>
+                              <p style={{ color: "var(--text-muted)", fontSize: "0.85rem", marginTop: "0.5rem" }}>
+                                {p.description || "No description provided."}
+                              </p>
+                            </div>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid var(--border-color)", paddingTop: "0.75rem" }}>
+                              <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+                                {tasks.filter(t => t.project_id === p.id).length} Tasks
+                              </span>
                               <button 
-                                onClick={() => handleDeleteProject(p.id)}
-                                className="btn btn-ghost" 
-                                style={{ padding: 0, color: "var(--color-error)" }}
+                                className="btn btn-secondary" 
+                                style={{ padding: "0.3rem 0.75rem", fontSize: "0.8rem" }}
+                                onClick={async () => {
+                                  if (activeNote) await handleSaveNote();
+                                  setActiveProject(p);
+                                }}
                               >
-                                <Trash2 size={14} />
+                                Open Desk <ArrowRight size={12} />
                               </button>
                             </div>
                           </div>
-                          <p style={{ color: "var(--text-muted)", fontSize: "0.85rem", marginTop: "0.5rem" }}>
-                            {p.description || "No description provided."}
-                          </p>
-                        </div>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid var(--border-color)", paddingTop: "0.75rem" }}>
-                          <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
-                            {tasks.filter(t => t.project_id === p.id).length} Tasks
-                          </span>
-                          <button 
-                            className="btn btn-secondary" 
-                            style={{ padding: "0.3rem 0.75rem", fontSize: "0.8rem" }}
-                            onClick={() => setActiveProject(p)}
-                          >
-                            Open Desk <ArrowRight size={12} />
-                          </button>
-                        </div>
+                        ))}
+                        {insertLineY !== null && (
+                          <div style={{
+                            position: "absolute", left: "0.5rem", right: "0.5rem",
+                            top: insertLineY, height: "3px",
+                            backgroundColor: "var(--brand-accent)",
+                            zIndex: 10, pointerEvents: "none",
+                            borderRadius: "2px",
+                            transform: "translateY(-1.5px)",
+                            boxShadow: "0 0 8px var(--brand-accent)",
+                            transition: "top 0.05s ease",
+                          }} />
+                        )}
                       </div>
-                    ))}
-                  </div>
+                    );
+                  })()}
                 </div>
               ) : (
                 /* Project Workspace Detail view */
                 <div>
-                  <button className="btn btn-secondary" onClick={() => setActiveProject(null)} style={{ marginBottom: "1.5rem" }}>
+                  <button className="btn btn-secondary" onClick={async () => { if (activeNote) await handleSaveNote(); setActiveProject(null); }} style={{ marginBottom: "1.5rem" }}>
                     ← Back to Projects
                   </button>
 
@@ -1258,76 +1542,107 @@ function DashboardContent() {
                     <div>
                       <h3 style={{ marginBottom: "1rem" }}>Project Tasks</h3>
                       <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                        {tasks.filter(t => t.project_id === activeProject.id && !t.is_archived).length === 0 ? (
-                          <div style={{ padding: "2rem", border: "1px dashed var(--border-color)", borderRadius: "var(--radius-md)", textAlign: "center", color: "var(--text-muted)" }}>
-                            No tasks inside this project. Create one below!
-                          </div>
-                        ) : (
-                          tasks.filter(t => t.project_id === activeProject.id && !t.is_archived).map(t => (
-                            <div key={t.id} className="task-item">
-                              <div className="task-checkbox-container">
-                                <button 
-                                  className={`task-checkbox ${t.status === "Completed" ? "checked" : ""}`}
-                                  onClick={() => handleToggleTask(t.id, t.status)}
-                                >
-                                  {t.status === "Completed" && <Check size={12} />}
-                                </button>
-                                <div>
-                                  <div
-                                    className={`task-title-text ${t.status === "Completed" ? "completed" : ""}`}
-                                    onClick={() => openTask(t.id)}
-                                    style={{ cursor: "pointer" }}
+                        {(() => {
+                          const activeProjectTasks = tasks
+                            .filter(t => t.project_id === activeProject.id && !t.is_archived && t.status !== "Completed")
+                            .sort((a, b) => {
+                              if (!a.due_date && !b.due_date) return 0;
+                              if (!a.due_date) return 1;
+                              if (!b.due_date) return -1;
+                              return a.due_date.localeCompare(b.due_date);
+                            });
+                          return activeProjectTasks.length === 0 ? (
+                            <div style={{ padding: "2rem", border: "1px dashed var(--border-color)", borderRadius: "var(--radius-md)", textAlign: "center", color: "var(--text-muted)" }}>
+                              No active tasks in this project.
+                            </div>
+                          ) : (
+                            activeProjectTasks.map(t => (
+                              <div key={t.id} className="task-item">
+                                <div className="task-checkbox-container">
+                                  <button 
+                                    className={`task-checkbox ${t.status === "Completed" ? "checked" : ""}`}
+                                    onClick={() => handleToggleTask(t.id, t.status)}
                                   >
-                                    {t.title}
-                                  </div>
-                                  <div className="task-meta">
-                                    <span className={`badge badge-${t.priority.toLowerCase()}`}>{t.priority}</span>
-                                    {t.due_date && (
-                                      <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", display: "flex", alignItems: "center", gap: "0.25rem" }}>
-                                        <Clock size={10} /> {t.due_date}
-                                      </span>
-                                    )}
+                                    {t.status === "Completed" && <Check size={12} />}
+                                  </button>
+                                  <div>
+                                    <div
+                                      className={`task-title-text ${t.status === "Completed" ? "completed" : ""}`}
+                                      onClick={() => openTask(t.id)}
+                                      style={{ cursor: "pointer" }}
+                                    >
+                                      {t.title}
+                                    </div>
+                                    <div className="task-meta">
+                                      <span className={`badge badge-${t.priority.toLowerCase()}`}>{t.priority}</span>
+                                      {t.due_date && (
+                                        <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", display: "flex", alignItems: "center", gap: "0.25rem" }}>
+                                          <Clock size={10} /> {t.due_date}
+                                        </span>
+                                      )}
+                                    </div>
                                   </div>
                                 </div>
-                              </div>
-                              <div className="task-actions">
-                                {t.is_archived ? (
+                                <div className="task-actions">
                                   <button
-                                    onClick={async () => { const ut = await unarchiveTask(t.id); setTasks(prev => prev.map(t2 => t2.id === t.id ? ut : t2)); }}
+                                    onClick={() => openTask(t.id)}
                                     className="btn btn-ghost"
-                                    style={{ padding: "0.25rem", color: "var(--color-success)" }}
-                                    title="Restore task"
+                                    style={{ padding: "0.25rem", color: "var(--brand-accent)" }}
+                                    title="Open task detail"
+                                  >
+                                    <Sparkles size={14} />
+                                  </button>
+                                  <button
+                                    onClick={async () => { const at = await archiveTask(t.id); setTasks(prev => prev.map(t2 => t2.id === t.id ? at : t2)); }}
+                                    className="btn btn-ghost"
+                                    style={{ padding: "0.25rem", color: "var(--text-muted)" }}
+                                    title="Archive task"
                                   >
                                     <Archive size={14} />
                                   </button>
-                                ) : (
-                                  <>
-                                    <button
-                                      onClick={() => openTask(t.id)}
-                                      className="btn btn-ghost"
-                                      style={{ padding: "0.25rem", color: "var(--brand-accent)" }}
-                                      title="Open task detail"
-                                    >
-                                      <Sparkles size={14} />
-                                    </button>
-                                    <button
-                                      onClick={async () => { const at = await archiveTask(t.id); setTasks(prev => prev.map(t2 => t2.id === t.id ? at : t2)); }}
-                                      className="btn btn-ghost"
-                                      style={{ padding: "0.25rem", color: "var(--text-muted)" }}
-                                      title="Archive task"
-                                    >
-                                      <Archive size={14} />
-                                    </button>
-                                    <button onClick={() => handleDeleteTask(t.id)} className="btn btn-ghost" style={{ padding: "0.25rem", color: "var(--color-error)" }}>
-                                      <Trash2 size={14} />
-                                    </button>
-                                  </>
-                                )}
+                                  <button onClick={() => handleDeleteTask(t.id)} className="btn btn-ghost" style={{ padding: "0.25rem", color: "var(--color-error)" }}>
+                                    <Trash2 size={14} />
+                                  </button>
+                                </div>
                               </div>
-                            </div>
-                          ))
-                        )}
+                            ))
+                          );
+                        })()}
                       </div>
+
+                      {/* Completed this week */}
+                      {(() => {
+                        const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+                        const completedThisWeek = tasks.filter(t =>
+                          t.project_id === activeProject.id && !t.is_archived &&
+                          t.status === "Completed" && t.completed_at &&
+                          new Date(t.completed_at).getTime() > weekAgo
+                        );
+                        if (completedThisWeek.length === 0) return null;
+                        return (
+                          <div style={{ marginTop: "1.5rem" }}>
+                            <h4 style={{ fontSize: "0.9rem", color: "var(--text-muted)", marginBottom: "0.5rem" }}>
+                              Completed This Week ({completedThisWeek.length})
+                            </h4>
+                            <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+                              {completedThisWeek.map(t => (
+                                <div key={t.id} style={{
+                                  display: "flex", alignItems: "center", gap: "0.5rem",
+                                  padding: "0.4rem 0.6rem", fontSize: "0.82rem",
+                                  borderRadius: "var(--radius-sm)", opacity: 0.7,
+                                  backgroundColor: "var(--bg-workspace)"
+                                }}>
+                                  <Check size={12} style={{ color: "var(--color-success)", flexShrink: 0 }} />
+                                  <span style={{ flex: 1 }}>{t.title}</span>
+                                  <span style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>
+                                    {t.completed_at ? new Date(t.completed_at).toLocaleDateString() : ""}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })()}
 
                       {/* Add task inside project */}
                       <form 
@@ -1394,22 +1709,34 @@ function DashboardContent() {
                         </button>
                       </div>
 
-                      {projectNotes.length > 0 && !activeNote && (
+                      {projectNotes.length > 0 && (
                         <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", marginBottom: "1.5rem" }}>
                           <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>SAVED NOTES</span>
                           {projectNotes.map(n => (
-                            <button 
-                              key={n.id} 
-                              className="btn btn-secondary" 
-                              style={{ width: "100%", justifyContent: "flex-start", textAlign: "left" }}
-                              onClick={() => {
-                                setActiveNote(n);
-                                setNoteTitle(n.title);
-                                setNoteContent(n.content);
-                              }}
-                            >
-                              <FileText size={14} /> {n.title}
-                            </button>
+                            <div key={n.id} style={{ display: "flex", gap: "0.25rem", alignItems: "stretch" }}>
+                              <button 
+                                className="btn btn-secondary" 
+                                style={{
+                                  flex: 1, justifyContent: "flex-start", textAlign: "left",
+                                  ...(activeNote?.id === n.id ? { borderColor: "var(--brand-accent)", backgroundColor: "var(--brand-accent-light)" } : {})
+                                }}
+                                onClick={() => {
+                                  setActiveNote(n);
+                                  setNoteTitle(n.title);
+                                  setNoteContent(n.content);
+                                }}
+                              >
+                                <FileText size={14} /> {n.title}
+                              </button>
+                              <button
+                                className="btn btn-ghost"
+                                style={{ padding: "0.25rem 0.5rem", color: "var(--color-error)", flexShrink: 0 }}
+                                onClick={() => handleDeleteNote(n.id)}
+                                title="Delete note"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
                           ))}
                         </div>
                       )}
@@ -1812,34 +2139,6 @@ function DashboardContent() {
               </div>
 
               <div className="paper-card" style={{ marginBottom: "1.5rem" }}>
-                <h4 style={{ marginBottom: "1rem" }}>Done Tasks ({tasks.filter(t => t.status === "Completed" && !t.is_archived && t.completed_at && new Date(t.completed_at).getTime() <= Date.now() - 7 * 24 * 60 * 60 * 1000).length})</h4>
-                {(() => {
-                  const oldDone = tasks.filter(t => t.status === "Completed" && !t.is_archived && t.completed_at && new Date(t.completed_at).getTime() <= Date.now() - 7 * 24 * 60 * 60 * 1000);
-                  return oldDone.length === 0 ? (
-                    <p style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>No completed tasks from over a week ago.</p>
-                  ) : (
-                    <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                      {oldDone.map(t => (
-                        <div key={t.id} className="task-item">
-                          <div className="task-checkbox-container">
-                            <div>
-                              <div className="task-title-text" style={{ opacity: 0.7 }}>{t.title}</div>
-                              <div className="task-meta">
-                                <span className={`badge badge-${t.priority.toLowerCase()}`}>{t.priority}</span>
-                                <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
-                                  Done {new Date(t.completed_at!).toLocaleDateString()}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  );
-                })()}
-              </div>
-
-              <div className="paper-card">
                 <h4 style={{ marginBottom: "1rem" }}>Archived Projects ({projects.filter(p => p.is_archived).length})</h4>
                 {projects.filter(p => p.is_archived).length === 0 ? (
                   <p style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>No archived projects.</p>
@@ -1872,10 +2171,275 @@ function DashboardContent() {
                   </div>
                 )}
               </div>
+
+              <div className="paper-card" style={{ marginBottom: "1.5rem" }}>
+                <h4 style={{ marginBottom: "1rem" }}>Completed Projects ({projects.filter(p => p.status === "Completed" && !p.is_archived).length})</h4>
+                {projects.filter(p => p.status === "Completed" && !p.is_archived).length === 0 ? (
+                  <p style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>No completed projects.</p>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                    {projects.filter(p => p.status === "Completed" && !p.is_archived).map(p => (
+                      <div key={p.id} className="task-item">
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flex: 1 }}>
+                          <Check size={16} style={{ color: "var(--color-success)", opacity: 0.6 }} />
+                          <div>
+                            <div style={{ opacity: 0.7 }}>{p.title}</div>
+                            {p.description && <div style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>{p.description}</div>}
+                          </div>
+                        </div>
+                        <div className="task-actions">
+                          <button
+                            onClick={async () => { await reopenProject(p.id); setProjects(prev => prev.map(pr => pr.id === p.id ? { ...pr, status: "Active" } : pr)); }}
+                            className="btn btn-ghost"
+                            style={{ padding: "0.25rem", color: "var(--brand-accent)" }}
+                            title="Reopen project"
+                          >
+                            <ArrowRight size={14} />
+                          </button>
+                          <button onClick={() => handleDeleteProject(p.id)} className="btn btn-ghost" style={{ padding: "0.25rem", color: "var(--color-error)" }}>
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="paper-card">
+                <h4 style={{ marginBottom: "1rem" }}>Done Tasks ({tasks.filter(t => t.status === "Completed" && !t.is_archived && t.completed_at && new Date(t.completed_at).getTime() <= Date.now() - 7 * 24 * 60 * 60 * 1000).length})</h4>
+                {(() => {
+                  const oldDone = tasks.filter(t => t.status === "Completed" && !t.is_archived && t.completed_at && new Date(t.completed_at).getTime() <= Date.now() - 7 * 24 * 60 * 60 * 1000);
+                  return oldDone.length === 0 ? (
+                    <p style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>No completed tasks from over a week ago.</p>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                      {oldDone.map(t => (
+                        <div key={t.id} className="task-item">
+                          <div className="task-checkbox-container">
+                            <div>
+                              <div className="task-title-text" style={{ opacity: 0.7 }}>{t.title}</div>
+                              <div className="task-meta">
+                                <span className={`badge badge-${t.priority.toLowerCase()}`}>{t.priority}</span>
+                                <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                                  Done {new Date(t.completed_at!).toLocaleDateString()}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+          )}
+
+          {/* VIEW: CALENDAR */}
+          {activeView === "calendar" && (
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginBottom: "1.5rem" }}>
+                <h3 style={{ margin: 0 }}>Calendar</h3>
+                <div className="tabs-header" style={{ margin: 0 }}>
+                  <button className={`tab-btn ${calendarMonth === 0 ? "active" : ""}`} onClick={() => setCalendarMonth(0)}>
+                    This Month
+                  </button>
+                  <button className={`tab-btn ${calendarMonth === 1 ? "active" : ""}`} onClick={() => setCalendarMonth(1)}>
+                    Next Month
+                  </button>
+                </div>
+              </div>
+              {(() => {
+                const weekDays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+                const now = new Date();
+                const month = now.getMonth() + calendarMonth;
+                const year = now.getFullYear() + Math.floor(month / 12);
+                const m = month % 12;
+                const startOfMonth = new Date(year, m, 1);
+                const endOfMonth = new Date(year, m + 1, 0);
+                const startPad = startOfMonth.getDay();
+                const daysInMonth = endOfMonth.getDate();
+                const cells: (number | null)[] = Array(startPad).fill(null);
+                for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+                const tasksByDate: Record<string, Task[]> = {};
+                tasks.filter(t => t.due_date && !t.is_archived && t.status !== "Completed").forEach(t => {
+                  (tasksByDate[t.due_date!] = tasksByDate[t.due_date!] || []).push(t);
+                });
+                const todayStr = new Date().toISOString().split("T")[0];
+                return (
+                  <div className="paper-card" style={{ overflow: "hidden" }}>
+                    <h4 style={{ marginBottom: "1rem", fontSize: "1.1rem" }}>
+                      {new Date(year, m).toLocaleString("default", { month: "long", year: "numeric" })}
+                    </h4>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)" }}>
+                      {weekDays.map(d => (
+                        <div key={d} style={{
+                          fontSize: "0.78rem", fontWeight: 600, color: "var(--text-muted)",
+                          padding: "0.5rem 0", borderBottom: "1px solid var(--border-color)",
+                          textAlign: "center"
+                        }}>{d}</div>
+                      ))}
+                      {cells.map((day, i) => {
+                        if (day === null) return <div key={`e-${i}`} style={{ borderRight: "1px solid var(--border-color)", borderBottom: "1px solid var(--border-color)" }} />;
+                        const dateStr = `${year}-${String(m + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+                        const dayTasks = tasksByDate[dateStr] || [];
+                        const isToday = todayStr === dateStr;
+                        return (
+                          <div key={dateStr} style={{
+                            padding: "0.35rem", borderRadius: 0, cursor: "pointer",
+                            backgroundColor: isToday ? "var(--brand-accent-light)" : "transparent",
+                            fontSize: "0.82rem", minHeight: isToday ? "90px" : "80px", height: "90px",
+                            borderRight: "1px solid var(--border-color)",
+                            borderBottom: "1px solid var(--border-color)",
+                            textAlign: "left", overflow: "hidden",
+                            display: "flex", flexDirection: "column",
+                          }}
+                          onClick={() => setSelectedDay(dateStr)}>
+                            <div style={{ fontWeight: isToday ? 700 : 400, fontSize: "0.78rem", flexShrink: 0 }}>{day}</div>
+                            <div style={{
+                              display: "flex", flexDirection: "column", gap: "0.1rem",
+                              marginTop: "0.15rem", overflow: "hidden", flex: 1, minHeight: 0
+                            }}>
+                              {dayTasks.slice(0, 3).map(t => (
+                                <div key={t.id} onClick={() => openTask(t.id)} style={{
+                                  fontSize: "0.62rem", padding: "0.05rem 0.25rem", cursor: "pointer",
+                                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                                  borderRadius: "2px", flexShrink: 0,
+                                  backgroundColor: t.priority === "High" ? "rgba(239,68,68,0.15)" : t.priority === "Medium" ? "rgba(234,179,8,0.15)" : "rgba(34,197,94,0.15)",
+                                  color: t.priority === "High" ? "#ef4444" : t.priority === "Medium" ? "#ca8a04" : "#16a34a",
+                                }} title={t.title}>
+                                  {t.title}
+                                </div>
+                              ))}
+                              {dayTasks.length > 3 && (
+                                <div style={{ fontSize: "0.6rem", color: "var(--text-muted)", flexShrink: 0 }}>
+                                  +{dayTasks.length - 3} more
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+          {/* VIEW: KANBAN */}
+          {activeView === "kanban" && (
+            <div>
+              <h3 style={{ marginBottom: "1.5rem" }}>Kanban Board</h3>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "1rem" }}>
+                  {(["To Do", "In Progress", "Completed"] as const).map(column => {
+                  const colTasks = tasks.filter(t => t.status === column && !t.is_archived);
+                  return (
+                    <div key={column} className="paper-card" style={{ minHeight: "300px" }}
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={async (e) => {
+                        e.preventDefault();
+                        if (!draggedTaskId) return;
+                        const updated = await updateTask(draggedTaskId, { status: column });
+                        setTasks(prev => prev.map(t2 => t2.id === draggedTaskId ? updated : t2));
+                        setDraggedTaskId(null); setDragOverTaskId(null);
+                      }}
+                    >
+                      <h4 style={{ marginBottom: "0.75rem", fontSize: "0.95rem", color: column === "To Do" ? "var(--text-muted)" : column === "In Progress" ? "var(--brand-accent)" : "var(--color-success)" }}>
+                        {column}
+                        <span style={{ fontSize: "0.8rem", marginLeft: "0.5rem", opacity: 0.6 }}>({colTasks.length})</span>
+                      </h4>
+                      <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                        {colTasks.map(t => (
+                          <div key={t.id}
+                            className="task-item"
+                            draggable
+                            onDragStart={() => setDraggedTaskId(t.id)}
+                            onDragOver={(e) => { e.preventDefault(); setDragOverTaskId(t.id); }}
+                            onDragEnd={() => { setDraggedTaskId(null); setDragOverTaskId(null); }}
+                            onDrop={async (e) => {
+                              e.preventDefault();
+                              if (!draggedTaskId || draggedTaskId === t.id) { setDraggedTaskId(null); setDragOverTaskId(null); return; }
+                              const updated = await updateTask(draggedTaskId, { status: column });
+                              setTasks(prev => prev.map(t2 => t2.id === draggedTaskId ? updated : t2));
+                              setDraggedTaskId(null); setDragOverTaskId(null);
+                            }}
+                            style={{ opacity: draggedTaskId === t.id ? 0.4 : 1, cursor: "grab", margin: 0 }}
+                          >
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontWeight: 550, fontSize: "0.85rem", cursor: "pointer" }} onClick={() => openTask(t.id)}>{t.title}</div>
+                              {t.due_date && <div style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginTop: "0.25rem" }}><Clock size={10} /> {t.due_date}</div>}
+                              <div style={{ display: "flex", gap: "0.25rem", flexWrap: "wrap", marginTop: "0.3rem" }}>
+                                {(t.tags || []).map(tag => (
+                                  <span key={tag} style={{ fontSize: "0.65rem", padding: "0.05rem 0.35rem", borderRadius: "var(--radius-full)", backgroundColor: "var(--brand-accent-light)", color: "var(--brand-accent)" }}>{tag}</span>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                        {colTasks.length === 0 && (
+                          <p style={{ color: "var(--text-muted)", fontSize: "0.8rem", textAlign: "center", padding: "2rem 0" }}>No tasks</p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>
       </main>
+
+      <ToastContainer />
+
+      {/* DAY DETAIL OVERLAY */}
+      {selectedDay && (
+        <div className="task-detail-overlay" onClick={() => setSelectedDay(null)}>
+          <div className="task-detail-panel" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "500px" }}>
+            <div className="task-detail-header">
+              <h3 style={{ margin: 0, fontSize: "1.1rem" }}>
+                {new Date(selectedDay + "T12:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
+              </h3>
+              <button className="btn btn-ghost" onClick={() => setSelectedDay(null)} style={{ padding: "0.25rem", fontSize: "1.2rem", lineHeight: 1 }}>×</button>
+            </div>
+            <div style={{ padding: "1rem 1.25rem", display: "flex", flexDirection: "column", gap: "0.5rem", maxHeight: "60vh", overflowY: "auto" }}>
+              {(() => {
+                const dayTasks = tasks.filter(t => t.due_date === selectedDay && !t.is_archived && t.status !== "Completed");
+                if (dayTasks.length === 0) {
+                  return <p style={{ color: "var(--text-muted)", textAlign: "center", padding: "2rem 0", fontSize: "0.9rem" }}>No tasks for this day.</p>;
+                }
+                return dayTasks.map(t => (
+                  <div key={t.id} className="task-item" style={{ margin: 0, cursor: "pointer" }} onClick={() => { setSelectedDay(null); openTask(t.id); }}>
+                    <div className="task-checkbox-container">
+                      <button 
+                        className={`task-checkbox ${t.status === "Completed" ? "checked" : ""}`}
+                        onClick={(e) => { e.stopPropagation(); handleToggleTask(t.id, t.status); }}
+                      >
+                        {t.status === "Completed" && <Check size={12} />}
+                      </button>
+                      <div>
+                        <div className="task-title-text">{t.title}</div>
+                        <div className="task-meta">
+                          {t.project_id && (
+                            <span style={{ fontSize: "0.75rem", fontFamily: "var(--font-mono)", color: "var(--brand-accent)" }}>
+                              #{projects.find(p => p.id === t.project_id)?.title}
+                            </span>
+                          )}
+                          <span className={`badge badge-${t.priority.toLowerCase()}`}>{t.priority}</span>
+                          {(t.tags || []).length > 0 && t.tags!.map(tag => (
+                            <span key={tag} style={{ fontSize: "0.7rem", padding: "0.1rem 0.4rem", borderRadius: "var(--radius-full)", backgroundColor: "var(--brand-accent-light)", color: "var(--brand-accent)" }}>{tag}</span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ));
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* TASK DETAIL OVERLAY */}
       {activeTaskId && activeTask && (
@@ -1941,6 +2505,42 @@ function DashboardContent() {
                   <option value="In Progress">In Progress</option>
                   <option value="Completed">Completed</option>
                 </select>
+              </div>
+            </div>
+
+            {/* Tags */}
+            <div className="task-detail-section">
+              <label className="form-label">Tags</label>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.4rem", marginBottom: "0.5rem" }}>
+                {taskEditTags.map(tag => (
+                  <span key={tag} style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem", padding: "0.15rem 0.5rem", borderRadius: "var(--radius-full)", backgroundColor: "var(--brand-accent-light)", color: "var(--brand-accent)", fontSize: "0.8rem" }}>
+                    {tag}
+                    <button className="btn btn-ghost" style={{ padding: 0, fontSize: "0.9rem", lineHeight: 1, color: "inherit" }} onClick={() => setTaskEditTags(prev => prev.filter(t => t !== tag))}>×</button>
+                  </span>
+                ))}
+              </div>
+              <div style={{ display: "flex", gap: "0.4rem" }}>
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder="Add tag..."
+                  style={{ flex: 1, fontSize: "0.85rem" }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && (e.target as HTMLInputElement).value.trim()) {
+                      const val = (e.target as HTMLInputElement).value.trim();
+                      setTaskEditTags(prev => prev.includes(val) ? prev : [...prev, val]);
+                      (e.target as HTMLInputElement).value = "";
+                    }
+                  }}
+                />
+                <button className="btn btn-ghost" style={{ padding: "0.25rem", color: "var(--brand-accent)" }} onClick={() => {
+                  const input = (document.querySelector(".task-detail-section .form-input") as HTMLInputElement);
+                  if (input && input.value.trim()) {
+                    const val = input.value.trim();
+                    setTaskEditTags(prev => prev.includes(val) ? prev : [...prev, val]);
+                    input.value = "";
+                  }
+                }}><Plus size={14} /></button>
               </div>
             </div>
 
@@ -2017,7 +2617,7 @@ function DashboardContent() {
           </div>
         </div>
       )}
-
+      </>)}
     </div>
   );
 }
